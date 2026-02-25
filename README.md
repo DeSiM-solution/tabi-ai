@@ -18,7 +18,14 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## UI Conventions
+
+For consistent UI generation (including future agent-generated screens), follow:
+
+- Design spec: `docs/font-design.md`
+- Global tokens/theme mapping: `src/app/globals.css`
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) for font optimization and exposes the font tokens via CSS variables.
 
 ## Learn More
 

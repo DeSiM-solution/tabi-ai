@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SessionStatus {
+  IDLE
+  RUNNING
+  COMPLETED
+  ERROR
+  CANCELLED
+}
+
+enum SessionToolName {
+  parse_youtube_input
+  crawl_youtube_videos
+  build_travel_blocks
+  resolve_spot_coordinates
+  search_image
+  generate_image
+  generate_handbook_html
+}
+
+enum SessionStepStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+  CANCELLED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+model Session {
+  id          String        @id @default(cuid())
+  title       String        @default("Untitled Guide")
+  description String?
+  status      SessionStatus @default(IDLE)
+  currentStep SessionToolName?
+  failedStep  SessionToolName?
+  lastError   String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+  steps    SessionStep[]
+  state    SessionState?
+
+  @@index([status, updatedAt(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
+}
+
+model ChatMessage {
+  id         String      @id @default(cuid())
+  sessionId  String
+  externalId String
+  seq        Int
+  role       MessageRole
+  text       String?
+  parts      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, externalId])
+  @@index([sessionId, seq])
+}
+
+model SessionStep {
+  id       String            @id @default(cuid())
+  sessionId String
+  toolName SessionToolName
+  status   SessionStepStatus @default(RUNNING)
+
+  input       Json?
+  output      Json?
+  errorMessage String?
+  retryCount  Int             @default(0)
+  durationMs  Int?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt(sort: Desc)])
+  @@index([sessionId, toolName, createdAt(sort: Desc)])
+}
+
+model SessionState {
+  sessionId String @id
+
+  context      Json?
+  blocks       Json?
+  spotBlocks   Json?
+  toolOutputs  Json?
+  handbookHtml String?
+  handbookVersion Int      @default(0)
+  handbookGeneratedAt DateTime?
+  previewPath String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
