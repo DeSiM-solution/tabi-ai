@@ -13,6 +13,8 @@ export function createRuntimeState(): AgentRuntimeState {
     latestImageMode: null,
     latestHandbookHtml: null,
     requestAborted: false,
+    requestToolStatus: {},
+    requestToolErrors: {},
     latestToolOutputs: {},
   };
 }

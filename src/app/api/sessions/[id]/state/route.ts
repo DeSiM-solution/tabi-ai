@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { patchSessionState } from '@/server/sessions';
+import { getRequestUserId } from '@/server/request-user';
 
 const patchSessionStateSchema = z.object({
   context: z.unknown().optional(),
@@ -27,6 +28,7 @@ export async function PATCH(
   }
 
   try {
+    const userId = getRequestUserId(req);
     const body = await req.json().catch(() => ({}));
     const parsed = patchSessionStateSchema.safeParse(body);
     if (!parsed.success) {
@@ -36,7 +38,7 @@ export async function PATCH(
       );
     }
 
-    await patchSessionState(sessionId, parsed.data);
+    await patchSessionState(sessionId, userId, parsed.data);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[sessions_api] patch-state-failed', { sessionId, error });

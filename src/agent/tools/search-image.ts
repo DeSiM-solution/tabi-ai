@@ -40,7 +40,7 @@ export function createSearchImageTool(ctx: AgentToolContext) {
           task: 'handbook_image_query_planning',
           schema: handbookImagePlanSchema,
           validateBusinessRules: output => validateHandbookImagePlan(targetBlocks, output),
-          abortSignal: ctx.req.signal,
+          abortSignal: ctx.abortSignal,
           prompt: handbookSearchImagePlanPrompt({
             targetBlocks,
             videoContext: ctx.runtime.latestVideoContext,
@@ -58,7 +58,7 @@ export function createSearchImageTool(ctx: AgentToolContext) {
             if (!matchedBlock) {
               throw new Error(`Unknown block_id in search_image plan: ${item.block_id}`);
             }
-            const unsplash = await fetchUnsplashPhoto(item.query, ctx.req.signal);
+            const unsplash = await fetchUnsplashPhoto(item.query, ctx.abortSignal);
             return {
               block_id: item.block_id,
               block_title: matchedBlock.title,

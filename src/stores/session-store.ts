@@ -14,6 +14,10 @@ export const SESSION_TOOL_ORDER = [
   'generate_handbook_html',
 ] as const;
 
+const NON_BLOCKING_FAILURE_STEPS = new Set<SessionToolName>([
+  'resolve_spot_coordinates',
+]);
+
 export type SessionToolName = (typeof SESSION_TOOL_ORDER)[number];
 export type SessionStepStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -223,8 +227,14 @@ const useSessionProcessStore = create<SessionStoreState>(set => ({
       step => steps[step].status === 'success',
     );
 
-    const failedStep =
-      SESSION_TOOL_ORDER.find(step => steps[step].status === 'error') ?? null;
+    const handbookGenerated = steps.generate_handbook_html.status === 'success';
+    const failedStep = handbookGenerated
+      ? null
+      : SESSION_TOOL_ORDER.find(
+          step =>
+            steps[step].status === 'error' &&
+            !NON_BLOCKING_FAILURE_STEPS.has(step),
+        ) ?? null;
 
     const loadingStep =
       SESSION_TOOL_ORDER.find(step => steps[step].status === 'loading') ?? null;

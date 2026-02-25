@@ -14,7 +14,7 @@ import {
 export function createGenerateImageTool(ctx: AgentToolContext) {
   return tool({
     description:
-      'Generate new images for the guide using Gemini Imagen. Use to create visual enhancements beyond video frames.',
+      'Generate new images for the guide using Gemini Imagen. Generated assets are stored in runtime/session state; tool output returns lightweight references.',
     inputSchema: z.object({
       count: z.number().int().min(1).max(MAX_HANDBOOK_IMAGES).optional(),
     }),
@@ -40,7 +40,7 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           task: 'handbook_image_query_planning',
           schema: handbookImagePlanSchema,
           validateBusinessRules: output => validateHandbookImagePlan(targetBlocks, output),
-          abortSignal: ctx.req.signal,
+          abortSignal: ctx.abortSignal,
           prompt: handbookGenerateImagePlanPrompt({
             targetBlocks,
             videoContext: ctx.runtime.latestVideoContext,
@@ -59,7 +59,7 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
             if (!matchedBlock) {
               throw new Error(`Unknown block_id in generate_image plan: ${item.block_id}`);
             }
-            const generated = await generateHandbookImageByPrompt(item.prompt, ctx.req.signal);
+            const generated = await generateHandbookImageByPrompt(item.prompt, ctx.abortSignal);
             imageModelsUsed.add(generated.model_id);
             return {
               block_id: item.block_id,
@@ -79,12 +79,20 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
         ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(images);
         ctx.runtime.latestImageMode = 'generate_image';
 
+        const imageRefs = ctx.runtime.latestHandbookImages.map(image => ({
+          block_id: image.block_id,
+          block_title: image.block_title,
+          alt: image.alt,
+          source: image.source,
+          credit: image.credit ?? null,
+        }));
+
         const output = {
           mode: 'generate_image' as const,
           planner_model: plannerModel,
           generation_models: [...imageModelsUsed],
           image_count: ctx.runtime.latestHandbookImages.length,
-          images: ctx.runtime.latestHandbookImages,
+          image_refs: imageRefs,
         };
 
         console.log('[generate_image] success', {

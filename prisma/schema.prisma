@@ -40,6 +40,7 @@ enum MessageRole {
 
 model Session {
   id          String        @id @default(cuid())
+  userId      String?
   title       String        @default("Untitled Guide")
   description String?
   status      SessionStatus @default(IDLE)
@@ -54,12 +55,32 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  user     User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   messages ChatMessage[]
   steps    SessionStep[]
   state    SessionState?
 
+  @@index([userId, updatedAt(sort: Desc)])
   @@index([status, updatedAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
+}
+
+model User {
+  id String @id
+
+  username String? @unique
+  email String? @unique
+  passwordHash String?
+  displayName String?
+  image String?
+  googleId String? @unique
+  githubId String? @unique
+  lastLoginAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
 }
 
 model ChatMessage {

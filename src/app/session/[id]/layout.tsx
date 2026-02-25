@@ -29,6 +29,7 @@ import {
 } from '@/stores/sessions-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
+import { UserCenterPanel } from '@/components/user-center-panel';
 import {
   sessionEditorActions,
   useSessionEditorSnapshot,
@@ -315,9 +316,7 @@ export default function SessionDetailLayout({
             <div className="flex h-full flex-col gap-0.5 px-2">
               <div className="flex items-center justify-between px-4 py-4">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-bg-secondary font-japanese text-[14px] font-medium leading-none text-text-primary">
-                    旅
-                  </span>
+                  <UserCenterPanel />
                   <h2 className="font-sans text-[16px] font-semibold text-text-primary">
                     Guides
                   </h2>
@@ -441,8 +440,8 @@ export default function SessionDetailLayout({
 
         <div className="flex min-w-0 flex-1 overflow-hidden">
           <section className="ui-page-enter-down hidden min-h-0 min-w-0 flex-1 flex-col lg:flex">
-            <div className="px-5 pt-4">
-              <div className="mx-auto flex h-[80px] items-center justify-center">
+            <div className="px-5 pt-2">
+              <div className="mx-auto flex h-[64px] items-center justify-center">
                 <div className="flex w-fit items-center gap-1.5 rounded-[14px] border border-border-light bg-bg-elevated px-1.5 py-1 shadow-[0_8px_24px_rgba(45,42,38,0.08)]">
                   <div className="flex items-center gap-0.5 rounded-[8px] bg-bg-secondary p-[3px]">
                     <button
@@ -574,7 +573,7 @@ export default function SessionDetailLayout({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 px-6 pb-6 pt-3">
+            <div className="min-h-0 flex-1 px-6 pb-4 pt-1">
               <div className="relative h-full overflow-hidden">
                 <div id="block-editor-panel-root" className="absolute inset-0" />
               </div>

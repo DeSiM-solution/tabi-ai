@@ -6,6 +6,7 @@ import {
   removeSession,
   updateSessionPartial,
 } from '@/server/sessions';
+import { getRequestUserId } from '@/server/request-user';
 
 const patchSessionSchema = z.object({
   title: z.string().trim().min(1).optional(),
@@ -21,7 +22,7 @@ function getSessionId(params: { id: string }): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -31,7 +32,8 @@ export async function GET(
   }
 
   try {
-    const session = await getSessionDetail(sessionId);
+    const userId = getRequestUserId(req);
+    const session = await getSessionDetail(sessionId, userId);
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
@@ -56,6 +58,7 @@ export async function PATCH(
   }
 
   try {
+    const userId = getRequestUserId(req);
     const body = await req.json().catch(() => ({}));
     const parsed = patchSessionSchema.safeParse(body);
     if (!parsed.success) {
@@ -65,7 +68,7 @@ export async function PATCH(
       );
     }
 
-    const session = await updateSessionPartial(sessionId, parsed.data);
+    const session = await updateSessionPartial(sessionId, userId, parsed.data);
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }
@@ -80,7 +83,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -90,7 +93,8 @@ export async function DELETE(
   }
 
   try {
-    await removeSession(sessionId);
+    const userId = getRequestUserId(req);
+    await removeSession(sessionId, userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[sessions_api] delete-failed', { sessionId, error });

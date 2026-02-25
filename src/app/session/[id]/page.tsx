@@ -1,7 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -48,6 +48,48 @@ const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
   'resolve_spot_coordinates',
 ]);
 
+type SessionHydrationPayload = {
+  session?: {
+    messages?: UIMessage[];
+    state?: {
+      context?: unknown;
+      blocks?: unknown;
+      spotBlocks?: unknown;
+      toolOutputs?: unknown;
+      handbookHtml?: string | null;
+      previewPath?: string | null;
+    } | null;
+  };
+};
+
+const sessionDetailHydrationInFlight = new Map<
+  string,
+  Promise<SessionHydrationPayload | null>
+>();
+
+async function fetchSessionHydrationPayload(
+  sessionId: string,
+): Promise<SessionHydrationPayload | null> {
+  const pending = sessionDetailHydrationInFlight.get(sessionId);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const response = await fetch(`/api/sessions/${sessionId}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as SessionHydrationPayload;
+  })();
+
+  const wrapped = request.finally(() => {
+    sessionDetailHydrationInFlight.delete(sessionId);
+  });
+  sessionDetailHydrationInFlight.set(sessionId, wrapped);
+  return wrapped;
+}
+
 function toGuidePreviewPath(path: string, sessionId: string): string {
   const normalized = path.split('?')[0] ?? path;
   if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
@@ -78,29 +120,6 @@ function toPreviewAddress(previewUrl: string | null, fallbackPath: string): stri
     }
   }
   return normalized || fallbackPath;
-}
-
-function getSessionTitleFromToolOutput(toolName: string, output: unknown): string | null {
-  if (!isRecord(output)) return null;
-
-  if (toolName === 'crawl_youtube_videos') {
-    if (!Array.isArray(output.videos)) return null;
-    for (const item of output.videos) {
-      if (!isRecord(item)) continue;
-      if (typeof item.title !== 'string') continue;
-      const nextTitle = item.title.trim();
-      if (nextTitle) return nextTitle;
-    }
-    return null;
-  }
-
-  if (toolName === 'build_travel_blocks') {
-    if (typeof output.title !== 'string') return null;
-    const nextTitle = output.title.trim();
-    return nextTitle || null;
-  }
-
-  return null;
 }
 
 function toPersistedBlocksOutput(
@@ -230,7 +249,10 @@ export default function Chat() {
   const currentSessionSummary = useSessionsStore(state =>
     state.sessions.find(session => session.id === sessionId) ?? null,
   );
+  const sessionsLoading = useSessionsStore(state => state.loading);
+  const sessionsLastFetched = useSessionsStore(state => state.lastFetched);
   const processState = useSessionStore(state => ({
+    sessionId: state.sessionId,
     loading: state.loading,
     error: state.error,
     stopped: state.stopped,
@@ -261,7 +283,8 @@ export default function Chat() {
   const loggedToolEventsRef = useRef<Set<string>>(new Set());
   const autoOpenedEditableSourceRef = useRef<Set<string>>(new Set());
   const hydratedSessionRef = useRef<string | null>(null);
-  const editorAutosaveDigestRef = useRef<string>('');
+  const hydratingSessionRef = useRef<string | null>(null);
+  const activeHydrationSessionRef = useRef<string | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
   const chatTransport = useMemo(
     () =>
@@ -283,7 +306,7 @@ export default function Chat() {
     [guidePreviewPath, handbookPreviewUrl],
   );
   const previewFrameWidth = previewDevice === 'mobile' ? 375 : 720;
-  const previewFrameMaxHeight = 'calc(100vh - 160px)';
+  const previewFrameMaxHeight = 'calc(100vh - 128px)';
   const firstUserTextMessage = useMemo(() => {
     for (const message of messages) {
       if (message.role !== 'user') continue;
@@ -346,8 +369,9 @@ export default function Chat() {
       return;
     }
     hydratedSessionRef.current = null;
+    hydratingSessionRef.current = null;
+    activeHydrationSessionRef.current = null;
     autoOpenedEditableSourceRef.current = new Set();
-    editorAutosaveDigestRef.current = '';
     persistedHandbookStyleRef.current = '';
     setIsSessionHydrating(true);
     setHandbookStyle(null);
@@ -364,6 +388,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!sessionId || hasSessionInList) return;
+    if (sessionsLastFetched === null || sessionsLoading) return;
     const createdAt = Date.now();
 
     sessionsActions.addSession({
@@ -377,7 +402,7 @@ export default function Chat() {
       createdAt,
       updatedAt: createdAt,
     });
-  }, [hasSessionInList, sessionId]);
+  }, [hasSessionInList, sessionId, sessionsLastFetched, sessionsLoading]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -406,33 +431,25 @@ export default function Chat() {
       setIsSessionHydrating(false);
       return;
     }
+    if (hydratingSessionRef.current === sessionId) {
+      activeHydrationSessionRef.current = sessionId;
+      return;
+    }
 
-    let cancelled = false;
+    activeHydrationSessionRef.current = sessionId;
+    hydratingSessionRef.current = sessionId;
     setIsSessionHydrating(true);
 
     const hydrateSession = async () => {
       try {
-        const response = await fetch(`/api/sessions/${sessionId}`, {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-          cache: 'no-store',
-        });
-        if (!response.ok) return;
+        const payload = await fetchSessionHydrationPayload(sessionId);
+        if (activeHydrationSessionRef.current !== sessionId) return;
 
-        const payload = (await response.json()) as {
-          session?: {
-            messages?: typeof messages;
-            state?: {
-              context?: unknown;
-              blocks?: unknown;
-              spotBlocks?: unknown;
-              toolOutputs?: unknown;
-              handbookHtml?: string | null;
-              previewPath?: string | null;
-            } | null;
-          };
-        };
-        if (cancelled) return;
+        if (!payload?.session) {
+          hydratedSessionRef.current = null;
+          return;
+        }
+        if (activeHydrationSessionRef.current !== sessionId) return;
 
         hydratedSessionRef.current = sessionId;
         if (Array.isArray(payload.session?.messages) && payload.session.messages.length > 0) {
@@ -452,6 +469,7 @@ export default function Chat() {
         );
 
         if (persistedHandbookStyle) {
+          persistedHandbookStyleRef.current = `${sessionId}:${persistedHandbookStyle}`;
           setHandbookStyle(persistedHandbookStyle);
         }
 
@@ -494,9 +512,15 @@ export default function Chat() {
           }
         }
       } catch (error) {
+        if (activeHydrationSessionRef.current === sessionId) {
+          hydratedSessionRef.current = null;
+        }
         console.error('[chat-ui] hydrate-session-failed', { sessionId, error });
       } finally {
-        if (!cancelled) {
+        if (hydratingSessionRef.current === sessionId) {
+          hydratingSessionRef.current = null;
+        }
+        if (activeHydrationSessionRef.current === sessionId) {
           setIsSessionHydrating(false);
         }
       }
@@ -505,9 +529,11 @@ export default function Chat() {
     void hydrateSession();
 
     return () => {
-      cancelled = true;
+      if (activeHydrationSessionRef.current === sessionId) {
+        activeHydrationSessionRef.current = null;
+      }
     };
-  }, [messages, sessionId, setMessages]);
+  }, [sessionId, setMessages]);
 
   useEffect(() => {
     if (didSendInitialInputRef.current) return;
@@ -533,6 +559,8 @@ export default function Chat() {
 
   useEffect(() => {
     if (!sessionId) return;
+    if (processState.sessionId !== sessionId) return;
+    if (isSessionHydrating) return;
 
     if (processState.stopped) {
       sessionsActions.updateSession(sessionId, {
@@ -587,8 +615,10 @@ export default function Chat() {
     processState.error,
     processState.failedStep,
     processState.loading,
+    processState.sessionId,
     processState.stopped,
     sessionId,
+    isSessionHydrating,
   ]);
 
   const openEditor = (sourceKey: string, toolName: string, output: unknown) => {
@@ -675,7 +705,6 @@ export default function Chat() {
       session.sourceKey,
       nextOutput,
     );
-    persistEditorOutput(session, nextOutput);
     sessionEditorActions.setHandbookStatus(sessionId, 'generating');
     sessionEditorActions.setHandbookError(sessionId, null);
     sessionEditorActions.setHandbookHtml(sessionId, null);
@@ -697,7 +726,7 @@ export default function Chat() {
       JSON.stringify(payload),
     ].join('\n');
     sendMessage({ text: prompt });
-  }, [handbookStyle, persistEditorOutput, sendMessage, sessionId]);
+  }, [handbookStyle, sendMessage, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -762,13 +791,6 @@ export default function Chat() {
           const output = editedToolOutputs[sourceKey] ?? part.output;
           console.log(`[chat-ui] ${toolName} output-json`, output);
 
-          if (sessionId) {
-            const nextSessionTitle = getSessionTitleFromToolOutput(toolName, output);
-            if (nextSessionTitle && currentSessionSummary?.title !== nextSessionTitle) {
-              sessionsActions.updateSession(sessionId, { title: nextSessionTitle });
-            }
-          }
-
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
             if (!isRecord(output) || typeof output.html !== 'string') {
@@ -815,7 +837,7 @@ export default function Chat() {
         }
       });
     }
-  }, [currentSessionSummary?.title, editedToolOutputs, messages, sessionId]);
+  }, [editedToolOutputs, messages, sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -848,35 +870,6 @@ export default function Chat() {
       }
     }
   }, [editedToolOutputs, editorSession, messages, sessionId]);
-
-  useEffect(() => {
-    if (!sessionId || !editorSession) return;
-
-    const timer = window.setTimeout(() => {
-      const nextOutput = applyEditorSession(editorSession);
-      const digest = JSON.stringify({
-        toolName: editorSession.toolName,
-        sourceKey: editorSession.sourceKey,
-        title: editorSession.title,
-        videoId: editorSession.videoId,
-        videoUrl: editorSession.videoUrl,
-        thumbnailUrl: editorSession.thumbnailUrl,
-        blocks: nextOutput.blocks,
-      });
-
-      if (editorAutosaveDigestRef.current === digest) return;
-      editorAutosaveDigestRef.current = digest;
-
-      sessionEditorActions.upsertEditedToolOutput(
-        sessionId,
-        editorSession.sourceKey,
-        nextOutput,
-      );
-      persistEditorOutput(editorSession, nextOutput);
-    }, 900);
-
-    return () => window.clearTimeout(timer);
-  }, [editorSession, persistEditorOutput, sessionId]);
 
   const headerSubtitle = processState.stopped
     ? `Stopped at ${formatToolLabel(processState.currentStep)}`
@@ -923,10 +916,12 @@ export default function Chat() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {firstUserTextMessage && (
-          <div className="mb-4 rounded-[12px] bg-accent-primary px-4 py-4">
-            <p className="whitespace-pre-wrap break-words text-[13px] font-medium leading-[1.55] text-text-inverse">
-              {firstUserTextMessage.text}
-            </p>
+          <div className="sticky top-0 z-20 mb-4 -mx-1 px-1 pb-1 pt-0">
+            <div className="rounded-[12px] bg-accent-primary px-4 py-4 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
+              <p className="whitespace-pre-wrap break-words text-[13px] font-medium leading-[1.55] text-text-inverse">
+                {firstUserTextMessage.text}
+              </p>
+            </div>
           </div>
         )}
 

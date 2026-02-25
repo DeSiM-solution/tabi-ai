@@ -47,6 +47,8 @@ type SpotBlockOutput = {
 
 export type EditedOutputs = Record<string, UnknownRecord>;
 
+const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
+
 export function createBlockId(): string {
   return nanoid(8);
 }
@@ -343,6 +345,32 @@ export function toGuidePrompt(raw: string): string | null {
   }
 
   return trimmed;
+}
+
+function isManualHandbookPrompt(raw: string): boolean {
+  const trimmed = raw.trim();
+  return (
+    trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX) &&
+    trimmed.includes('HANDBOOK_INPUT_JSON:')
+  );
+}
+
+function toFirstSentence(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  const sentenceEnd = trimmed.search(/[.!?](\s|\n|$)/);
+  if (sentenceEnd >= 0) {
+    return trimmed.slice(0, sentenceEnd + 1);
+  }
+
+  const firstLine = trimmed.split('\n').map(line => line.trim()).find(Boolean);
+  return firstLine ?? trimmed;
+}
+
+export function toDisplayUserText(raw: string): string {
+  if (!isManualHandbookPrompt(raw)) return raw;
+  return toFirstSentence(raw);
 }
 
 export function isToolPart(part: UIMessage['parts'][number]): part is ToolPart {

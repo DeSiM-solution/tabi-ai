@@ -44,6 +44,8 @@ type SessionsStoreState =
   & SessionsExtraActions;
 
 const SESSIONS_REFRESH_TTL_MS = 30_000;
+let hydrateSessionsInFlight: Promise<void> | null = null;
+const updateSessionInFlightByKey = new Map<string, Promise<void>>();
 
 const initialState: SessionsState = {
   sessions: [],
@@ -132,14 +134,26 @@ async function updateSessionOnApi(
 
   if (Object.keys(patchPayload).length === 0) return;
 
-  const response = await fetch(`/api/sessions/${sessionId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patchPayload),
+  const requestKey = `${sessionId}:${JSON.stringify(patchPayload)}`;
+  const pending = updateSessionInFlightByKey.get(requestKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const response = await fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patchPayload),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update session (${response.status})`);
+    }
+  })();
+
+  const wrapped = request.finally(() => {
+    updateSessionInFlightByKey.delete(requestKey);
   });
-  if (!response.ok) {
-    throw new Error(`Failed to update session (${response.status})`);
-  }
+  updateSessionInFlightByKey.set(requestKey, wrapped);
+  return wrapped;
 }
 
 async function removeSessionOnApi(sessionId: string): Promise<void> {
@@ -193,6 +207,9 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
 
   updateSession(sessionId, updates) {
     if (!updates || Object.keys(updates).length === 0) return;
+    const shouldRefreshSessionsAfterUpdate =
+      (typeof updates.title === 'string' && updates.title.trim().length > 0) ||
+      Object.prototype.hasOwnProperty.call(updates, 'description');
     let changed = false;
 
     set(previous => {
@@ -232,14 +249,19 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
 
     if (!changed) return;
 
-    void updateSessionOnApi(sessionId, updates).catch(error => {
-      const message =
-        error instanceof Error ? error.message : 'Failed to update session';
-      set(previous => ({
-        ...previous,
-        error: message,
-      }));
-    });
+    void updateSessionOnApi(sessionId, updates)
+      .then(() => {
+        if (!shouldRefreshSessionsAfterUpdate) return;
+        return get().hydrateFromServer();
+      })
+      .catch(error => {
+        const message =
+          error instanceof Error ? error.message : 'Failed to update session';
+        set(previous => ({
+          ...previous,
+          error: message,
+        }));
+      });
   },
 
   removeSession(sessionId) {
@@ -248,14 +270,16 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
       sessions: previous.sessions.filter(session => session.id !== sessionId),
     }));
 
-    void removeSessionOnApi(sessionId).catch(error => {
-      const message =
-        error instanceof Error ? error.message : 'Failed to delete session';
-      set(previous => ({
-        ...previous,
-        error: message,
-      }));
-    });
+    void removeSessionOnApi(sessionId)
+      .then(() => get().hydrateFromServer())
+      .catch(error => {
+        const message =
+          error instanceof Error ? error.message : 'Failed to delete session';
+        set(previous => ({
+          ...previous,
+          error: message,
+        }));
+      });
   },
 
   setLoading(loading) {
@@ -297,31 +321,43 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
   },
 
   async hydrateFromServer() {
-    set(previous => ({
-      ...previous,
-      loading: true,
-      error: null,
-    }));
-
-    try {
-      const sessions = await readSessionsFromApi();
-      const now = Date.now();
-      set(previous => ({
-        ...previous,
-        sessions: normalizeAndSortSessions(sessions, now),
-        loading: false,
-        error: null,
-        lastFetched: now,
-      }));
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to fetch sessions';
-      set(previous => ({
-        ...previous,
-        loading: false,
-        error: message,
-      }));
+    if (hydrateSessionsInFlight) {
+      return hydrateSessionsInFlight;
     }
+
+    const request = (async () => {
+      set(previous => ({
+        ...previous,
+        loading: true,
+        error: null,
+      }));
+
+      try {
+        const sessions = await readSessionsFromApi();
+        const now = Date.now();
+        set(previous => ({
+          ...previous,
+          sessions: normalizeAndSortSessions(sessions, now),
+          loading: false,
+          error: null,
+          lastFetched: now,
+        }));
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to fetch sessions';
+        set(previous => ({
+          ...previous,
+          loading: false,
+          error: message,
+        }));
+      }
+    })();
+
+    hydrateSessionsInFlight = request.finally(() => {
+      hydrateSessionsInFlight = null;
+    });
+
+    return hydrateSessionsInFlight;
   },
 }));
 

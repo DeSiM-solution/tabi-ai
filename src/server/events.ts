@@ -40,10 +40,28 @@ function toMessageRole(role: UIMessage['role']): MessageRole {
   return MessageRole.USER;
 }
 
+async function assertOwnedSession(
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    select: { id: true },
+  });
+  if (!session) {
+    throw new Error('Session not found for current user.');
+  }
+}
+
 export async function upsertChatMessages(
   sessionId: string,
+  userId: string,
   messages: UIMessage[],
 ): Promise<void> {
+  await assertOwnedSession(sessionId, userId);
   const externalIds = messages.map(message => message.id);
   await db.$transaction(async tx => {
     for (const [seq, message] of messages.entries()) {
@@ -92,9 +110,11 @@ export async function upsertChatMessages(
 
 export async function createSessionStep(input: {
   sessionId: string;
+  userId: string;
   toolName: SessionToolName;
   payload?: unknown;
 }): Promise<string> {
+  await assertOwnedSession(input.sessionId, input.userId);
   const now = new Date();
   const step = await db.sessionStep.create({
     data: {
@@ -107,8 +127,11 @@ export async function createSessionStep(input: {
     select: { id: true },
   });
 
-  await db.session.update({
-    where: { id: input.sessionId },
+  await db.session.updateMany({
+    where: {
+      id: input.sessionId,
+      userId: input.userId,
+    },
     data: {
       status: SessionStatus.RUNNING,
       currentStep: input.toolName,
@@ -123,11 +146,15 @@ export async function createSessionStep(input: {
 
 export async function completeSessionStep(input: {
   stepId: string;
+  sessionId: string;
   output?: unknown;
   durationMs?: number;
 }): Promise<void> {
-  await db.sessionStep.update({
-    where: { id: input.stepId },
+  await db.sessionStep.updateMany({
+    where: {
+      id: input.stepId,
+      sessionId: input.sessionId,
+    },
     data: {
       status: SessionStepStatus.SUCCESS,
       output: toNullableInputJson(input.output),
@@ -140,13 +167,17 @@ export async function completeSessionStep(input: {
 export async function failSessionStep(input: {
   stepId: string;
   sessionId: string;
+  userId: string;
   toolName: SessionToolName;
   errorMessage: string;
   durationMs?: number;
 }): Promise<void> {
   await db.$transaction([
-    db.sessionStep.update({
-      where: { id: input.stepId },
+    db.sessionStep.updateMany({
+      where: {
+        id: input.stepId,
+        sessionId: input.sessionId,
+      },
       data: {
         status: SessionStepStatus.ERROR,
         errorMessage: input.errorMessage,
@@ -154,10 +185,13 @@ export async function failSessionStep(input: {
         finishedAt: new Date(),
       },
     }),
-    db.session.update({
-      where: { id: input.sessionId },
+    db.session.updateMany({
+      where: {
+        id: input.sessionId,
+        userId: input.userId,
+      },
       data: {
-        status: SessionStatus.ERROR,
+        status: SessionStatus.RUNNING,
         failedStep: input.toolName,
         currentStep: input.toolName,
         lastError: input.errorMessage,
@@ -169,19 +203,26 @@ export async function failSessionStep(input: {
 export async function cancelSessionStep(input: {
   stepId: string;
   sessionId: string;
+  userId: string;
   durationMs?: number;
 }): Promise<void> {
   await db.$transaction([
-    db.sessionStep.update({
-      where: { id: input.stepId },
+    db.sessionStep.updateMany({
+      where: {
+        id: input.stepId,
+        sessionId: input.sessionId,
+      },
       data: {
         status: SessionStepStatus.CANCELLED,
         durationMs: input.durationMs ?? null,
         finishedAt: new Date(),
       },
     }),
-    db.session.update({
-      where: { id: input.sessionId },
+    db.session.updateMany({
+      where: {
+        id: input.sessionId,
+        userId: input.userId,
+      },
       data: {
         status: SessionStatus.CANCELLED,
         cancelledAt: new Date(),
@@ -191,24 +232,37 @@ export async function cancelSessionStep(input: {
   ]);
 }
 
-export async function markSessionCompleted(sessionId: string): Promise<void> {
+export async function markSessionCompleted(
+  sessionId: string,
+  userId: string,
+): Promise<void> {
   await db.session.updateMany({
     where: {
       id: sessionId,
+      userId,
       status: {
-        notIn: [SessionStatus.ERROR, SessionStatus.CANCELLED],
+        not: SessionStatus.CANCELLED,
       },
     },
     data: {
       status: SessionStatus.COMPLETED,
+      currentStep: null,
+      failedStep: null,
+      lastError: null,
       completedAt: new Date(),
     },
   });
 }
 
-export async function markSessionCancelled(sessionId: string): Promise<void> {
+export async function markSessionCancelled(
+  sessionId: string,
+  userId: string,
+): Promise<void> {
   await db.session.updateMany({
-    where: { id: sessionId },
+    where: {
+      id: sessionId,
+      userId,
+    },
     data: {
       status: SessionStatus.CANCELLED,
       cancelledAt: new Date(),
@@ -219,13 +273,23 @@ export async function markSessionCancelled(sessionId: string): Promise<void> {
 
 export async function markSessionError(
   sessionId: string,
+  userId: string,
   errorMessage: string,
+  options: { failedStep?: SessionToolName | null } = {},
 ): Promise<void> {
   await db.session.updateMany({
-    where: { id: sessionId },
+    where: {
+      id: sessionId,
+      userId,
+      status: {
+        not: SessionStatus.CANCELLED,
+      },
+    },
     data: {
       status: SessionStatus.ERROR,
       lastError: errorMessage,
+      failedStep: options.failedStep === undefined ? undefined : options.failedStep,
+      currentStep: options.failedStep === undefined ? undefined : options.failedStep,
     },
   });
 }

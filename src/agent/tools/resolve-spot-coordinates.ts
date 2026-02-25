@@ -6,6 +6,7 @@ import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/uti
 import { resolveSpotCoordinatesPrompt } from '@/agent/prompts/resolve-spot-coordinates';
 import { spotQueryOutputSchema } from './types';
 import {
+  buildGeocodeQueryVariants,
   applySpotLocations,
   geocodeSpotByQuery,
   getSpotBlocks,
@@ -94,7 +95,7 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
             task: 'spot_query_normalization',
             schema: spotQueryOutputSchema,
             validateBusinessRules: output => validateSpotQueryOutput(sourceSpots, output),
-            abortSignal: ctx.req.signal,
+            abortSignal: ctx.abortSignal,
             prompt: resolveSpotCoordinatesPrompt({
               videoContext: ctx.runtime.latestVideoContext,
               sourceSpots,
@@ -119,32 +120,49 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
 
         const spotsWithCoordinates = await Promise.all(
           object.spot_queries.map(async item => {
-            console.log('[resolve_spot_coordinates] geocode-start', {
-              block_id: item.block_id,
-              query: item.query,
-            });
-            let location = await geocodeSpotByQuery(item.query, ctx.req.signal);
-            if (!location && ctx.runtime.latestVideoContext?.location) {
-              const fallbackQuery = `${item.query}, ${ctx.runtime.latestVideoContext.location}`;
-              console.log('[resolve_spot_coordinates] geocode-fallback-start', {
+            const queryVariants = buildGeocodeQueryVariants(item.query);
+            const locationSuffix = ctx.runtime.latestVideoContext?.location?.trim() || null;
+            let location: { lat: number; lng: number } | null = null;
+            let matchedQuery: string | null = null;
+
+            for (const variant of queryVariants) {
+              console.log('[resolve_spot_coordinates] geocode-start', {
+                block_id: item.block_id,
+                query: variant,
+                mode: 'primary',
+              });
+
+              location = await geocodeSpotByQuery(variant, ctx.abortSignal);
+              if (location) {
+                matchedQuery = variant;
+                break;
+              }
+
+              if (!locationSuffix) continue;
+              const fallbackQuery = variant.includes(locationSuffix)
+                ? variant
+                : `${variant}, ${locationSuffix}`;
+
+              console.log('[resolve_spot_coordinates] geocode-start', {
                 block_id: item.block_id,
                 query: fallbackQuery,
+                mode: 'location-fallback',
               });
-              location = await geocodeSpotByQuery(fallbackQuery, ctx.req.signal);
-              console.log('[resolve_spot_coordinates] geocode-fallback-finish', {
-                block_id: item.block_id,
-                query: fallbackQuery,
-                location,
-              });
+              location = await geocodeSpotByQuery(fallbackQuery, ctx.abortSignal);
+              if (location) {
+                matchedQuery = fallbackQuery;
+                break;
+              }
             }
+
             console.log('[resolve_spot_coordinates] geocode-finish', {
               block_id: item.block_id,
-              query: item.query,
+              query: matchedQuery ?? item.query,
               location,
             });
             return {
               block_id: item.block_id,
-              query: item.query,
+              query: matchedQuery ?? item.query,
               location,
             };
           }),

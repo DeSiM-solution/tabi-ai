@@ -9,10 +9,11 @@ import { persistSessionSnapshot } from '@/agent/context/persistence';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
 import { handbookHtmlPrompt, handbookHtmlSystemPrompt } from '@/agent/prompts/handbook-html';
-import { handbookInputSchema } from './types';
+import { handbookImageAssetSchema, handbookInputSchema } from './types';
 import {
   appendOriginVideoLink,
   ensureVideoThumbnailHeader,
+  getSpotBlocks,
   normalizeHtmlDocument,
   normalizeThumbnailUrl,
   stripVideoEmbeds,
@@ -21,27 +22,74 @@ import {
 export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
   return tool({
     description:
-      'Generate a full single-file handbook HTML page from edited blocks with coordinates.',
+      'Generate a full single-file handbook HTML page. If blocks/images are omitted, the tool uses the latest runtime/session state.',
     inputSchema: handbookInputSchema,
     execute: async input =>
       ctx.runToolStep('generate_handbook_html', input, async () => {
+        type NormalizedHandbookImage = {
+          block_id: string;
+          block_title: string;
+          query: string;
+          alt: string;
+          image_url: string;
+          source: 'unsplash' | 'imagen';
+          source_page: string | null;
+          credit: string | null;
+          width: number | null;
+          height: number | null;
+        };
+
         const startedAt = Date.now();
+        const effectiveBlocks =
+          Array.isArray(input.blocks) && input.blocks.length > 0
+            ? input.blocks
+            : ctx.runtime.latestBlocks;
+        if (!effectiveBlocks || effectiveBlocks.length === 0) {
+          throw new Error(
+            'No blocks available for handbook generation. Run build_travel_blocks first.',
+          );
+        }
+
         const spotBlocks =
           input.spot_blocks && input.spot_blocks.length > 0
             ? input.spot_blocks
-            : input.blocks
-                .filter(block => block.type === 'spot')
-                .map(block => ({
-                  block_id: block.block_id,
-                  title: block.title,
-                  description: block.description,
-                  location: block.location,
-                  smart_tags: block.smart_tags,
-                }));
-        const imagesFromInput =
-          Array.isArray(input.images) && input.images.length > 0 ? input.images : [];
+            : ctx.runtime.latestSpotBlocks.length > 0
+              ? ctx.runtime.latestSpotBlocks
+              : getSpotBlocks(effectiveBlocks);
+
+        const runtimeImageByBlockId = new Map(
+          ctx.runtime.latestHandbookImages.map(image => [image.block_id, image]),
+        );
+        const normalizedInputImages = (Array.isArray(input.images) ? input.images : [])
+          .map(image => {
+            const runtimeImage = runtimeImageByBlockId.get(image.block_id);
+            const resolvedImageUrl = image.image_url ?? runtimeImage?.image_url;
+            if (!resolvedImageUrl) return null;
+
+            const fallbackTitle = runtimeImage?.block_title ?? image.block_title ?? '';
+            const fallbackQuery = runtimeImage?.query ?? image.query ?? '';
+            const fallbackAlt =
+              runtimeImage?.alt ?? image.alt ?? (fallbackTitle || 'Travel image');
+
+            return {
+              block_id: image.block_id,
+              block_title: image.block_title ?? runtimeImage?.block_title ?? fallbackTitle,
+              query: image.query ?? runtimeImage?.query ?? fallbackQuery,
+              alt: image.alt ?? runtimeImage?.alt ?? fallbackAlt,
+              image_url: resolvedImageUrl,
+              source: image.source ?? runtimeImage?.source ?? 'unsplash',
+              source_page: image.source_page ?? runtimeImage?.source_page ?? null,
+              credit: image.credit ?? runtimeImage?.credit ?? null,
+              width: image.width ?? runtimeImage?.width ?? null,
+              height: image.height ?? runtimeImage?.height ?? null,
+            } satisfies NormalizedHandbookImage;
+          })
+          .filter((image): image is NormalizedHandbookImage => image !== null);
+
         const preparedImages =
-          imagesFromInput.length > 0 ? imagesFromInput : ctx.runtime.latestHandbookImages;
+          normalizedInputImages.length > 0
+            ? handbookImageAssetSchema.array().parse(normalizedInputImages)
+            : ctx.runtime.latestHandbookImages;
         if (!preparedImages || preparedImages.length === 0) {
           throw new Error(
             'No prepared images found. Call search_image or generate_image before generate_handbook_html.',
@@ -55,7 +103,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
             : 'search_image';
         }
         const imageByBlockId = new Map(preparedImages.map(image => [image.block_id, image]));
-        const blocksWithImages = input.blocks.map(block => ({
+        const blocksWithImages = effectiveBlocks.map(block => ({
           ...block,
           image: imageByBlockId.get(block.block_id) ?? null,
         }));
@@ -65,8 +113,23 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
             'Prepared images do not match current blocks. Run search_image or generate_image again.',
           );
         }
+        const promptImageUrlReplacements = new Map<string, string>();
+        const imagesForPrompt = preparedImages.map(image => {
+          if (!image.image_url.startsWith('data:')) return image;
+          const placeholderUrl = `https://tabi.invalid/generated/${encodeURIComponent(image.block_id)}.png`;
+          promptImageUrlReplacements.set(placeholderUrl, image.image_url);
+          return {
+            ...image,
+            image_url: placeholderUrl,
+          };
+        });
+        const promptImageByBlockId = new Map(imagesForPrompt.map(image => [image.block_id, image]));
+        const blocksWithImagesForPrompt = effectiveBlocks.map(block => ({
+          ...block,
+          image: promptImageByBlockId.get(block.block_id) ?? null,
+        }));
 
-        ctx.runtime.latestBlocks = input.blocks;
+        ctx.runtime.latestBlocks = effectiveBlocks;
         ctx.runtime.latestSpotBlocks = spotBlocks;
         const handbookStyle =
           normalizeHandbookStyle(input.handbookStyle) ??
@@ -96,7 +159,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
 
         console.log('[generate_handbook_html] start', {
           title: input.title ?? null,
-          blockCount: input.blocks.length,
+          blockCount: effectiveBlocks.length,
           spotCount: spotBlocks.length,
           imageCount: preparedImages.length,
           matchedImageCount,
@@ -110,7 +173,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         try {
           const result = await runTextTask({
             task: 'handbook_html_generation',
-            abortSignal: ctx.req.signal,
+            abortSignal: ctx.abortSignal,
             system: handbookHtmlSystemPrompt({ handbookStyleInstruction }),
             prompt: handbookHtmlPrompt({
               title: resolvedTitle,
@@ -123,10 +186,10 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
                 hashtags: ctx.runtime.latestVideoContext?.hashtags ?? [],
               },
               thumbnailUrl: resolvedThumbnailUrl,
-              blocks: input.blocks,
-              blocksWithImages,
+              blocks: effectiveBlocks,
+              blocksWithImages: blocksWithImagesForPrompt,
               spotBlocks,
-              images: preparedImages,
+              images: imagesForPrompt,
               imageMode: ctx.runtime.latestImageMode,
               handbookStyle,
               handbookStyleLabel,
@@ -135,6 +198,9 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           });
           const originVideoUrl = input.videoUrl ?? ctx.runtime.latestVideoContext?.videoUrl ?? null;
           html = normalizeHtmlDocument(result.text);
+          for (const [placeholderUrl, sourceUrl] of promptImageUrlReplacements) {
+            html = html.split(placeholderUrl).join(sourceUrl);
+          }
           html = stripVideoEmbeds(html);
           html = ensureVideoThumbnailHeader(html, {
             thumbnailUrl: resolvedThumbnailUrl,
@@ -154,8 +220,8 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         }
 
         ctx.runtime.latestHandbookHtml = html;
-        if (ctx.sessionId) {
-          await persistSessionSnapshot(ctx.sessionId, ctx.runtime, {
+        if (ctx.sessionId && ctx.userId) {
+          await persistSessionSnapshot(ctx.sessionId, ctx.userId, ctx.runtime, {
             incrementHandbookVersion: true,
           });
         }
@@ -165,7 +231,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           videoId: input.videoId ?? ctx.runtime.latestVideoContext?.videoId ?? '',
           videoUrl: input.videoUrl ?? ctx.runtime.latestVideoContext?.videoUrl ?? '',
           thumbnailUrl: resolvedThumbnailUrl,
-          block_count: input.blocks.length,
+          block_count: effectiveBlocks.length,
           spot_count: spotBlocks.length,
           image_count: preparedImages.length,
           matched_image_count: matchedImageCount,

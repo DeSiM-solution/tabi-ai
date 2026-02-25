@@ -20,12 +20,16 @@ export interface AgentRuntimeState {
   latestImageMode: 'search_image' | 'generate_image' | null;
   latestHandbookHtml: string | null;
   requestAborted: boolean;
+  requestToolStatus: Partial<Record<PersistedToolName, 'running' | 'success' | 'error' | 'cancelled'>>;
+  requestToolErrors: Partial<Record<PersistedToolName, string>>;
   latestToolOutputs: Record<string, unknown>;
 }
 
 export interface AgentToolContext {
   req: Request;
+  abortSignal?: AbortSignal;
   sessionId: string | null;
+  userId: string | null;
   runtime: AgentRuntimeState;
   runToolStep: <T>(
     toolName: PersistedToolName,

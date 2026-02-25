@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getSessionHandbook } from '@/server/sessions';
+import { getRequestUserId } from '@/server/request-user';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -12,7 +13,8 @@ export async function GET(
   }
 
   try {
-    const handbook = await getSessionHandbook(sessionId);
+    const userId = getRequestUserId(req);
+    const handbook = await getSessionHandbook(sessionId, userId);
     if (!handbook) {
       return new NextResponse('Guide not found.', { status: 404 });
     }

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { markSessionCancelled } from '@/server/events';
+import { getRequestUserId } from '@/server/request-user';
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -12,7 +13,8 @@ export async function POST(
   }
 
   try {
-    await markSessionCancelled(sessionId);
+    const userId = getRequestUserId(req);
+    await markSessionCancelled(sessionId, userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[sessions_api] cancel-failed', { sessionId, error });

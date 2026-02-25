@@ -5,7 +5,9 @@ import { sessionsActions } from '@/stores/sessions-store';
 
 export function useHydrateSessionsStore(): void {
   useEffect(() => {
-    void sessionsActions.hydrateFromServer();
+    if (sessionsActions.refreshIfNeeded()) {
+      void sessionsActions.hydrateFromServer();
+    }
 
     const onFocus = () => {
       if (!sessionsActions.refreshIfNeeded()) return;

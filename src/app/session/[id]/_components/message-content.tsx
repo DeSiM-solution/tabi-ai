@@ -20,6 +20,7 @@ import {
   getToolStatus,
   getToolSummary,
   isToolPart,
+  toDisplayUserText,
   type EditedOutputs,
   type ToolPart,
 } from '../_lib/chat-utils';
@@ -132,12 +133,13 @@ export function MessageContent({
       {message.parts.map((part, i) => {
         if (part.type === 'text' && part.text) {
           if (message.role === 'user') {
+            const displayText = toDisplayUserText(part.text);
             return (
               <p
                 key={`${message.id}-${i}`}
                 className="whitespace-pre-wrap break-words text-[13px] leading-[1.55] text-text-inverse"
               >
-                {part.text}
+                {displayText}
               </p>
             );
           }

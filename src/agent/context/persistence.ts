@@ -114,9 +114,10 @@ export function buildPersistedContext(
 
 export async function hydrateRuntimeState(
   sessionId: string,
+  userId: string,
   runtime: AgentRuntimeState,
 ): Promise<SessionStateSnapshot | null> {
-  const persistedState = await getSessionStateSnapshot(sessionId);
+  const persistedState = await getSessionStateSnapshot(sessionId, userId);
   if (!persistedState) return null;
 
   runtime.latestBlocks = parsePersistedTravelBlocks(persistedState.blocks);
@@ -177,6 +178,7 @@ export async function hydrateRuntimeState(
 
 export async function persistSessionSnapshot(
   sessionId: string,
+  userId: string,
   runtime: AgentRuntimeState,
   options: {
     incrementHandbookVersion?: boolean;
@@ -188,7 +190,7 @@ export async function persistSessionSnapshot(
       ? options.forceHandbookHtml
       : runtime.latestHandbookHtml ?? undefined;
 
-  await upsertSessionState(sessionId, {
+  await upsertSessionState(sessionId, userId, {
     context: buildPersistedContext(
       runtime.latestVideoContext,
       runtime.latestApifyVideos,

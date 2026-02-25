@@ -29,6 +29,7 @@ import {
   useSessionsStore,
 } from '@/stores/sessions-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
+import { UserCenterPanel } from '@/components/user-center-panel';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'youtu.be']);
 const EXAMPLE_VIDEOS = [
@@ -262,9 +263,7 @@ export default function Home() {
             <div className="flex h-full flex-col gap-0.5 px-2">
               <div className="flex items-center justify-between px-4 py-4">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-bg-secondary font-japanese text-[14px] font-medium leading-none text-text-primary">
-                    旅
-                  </span>
+                  <UserCenterPanel />
                   <h2 className="font-sans text-[16px] font-semibold text-text-primary">
                     Guides
                   </h2>

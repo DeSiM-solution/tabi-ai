@@ -67,7 +67,7 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
               task: 'json_compilation_strict',
               schema: travelBlocksOutputSchema,
               validateBusinessRules: validateTravelBlocksOutput,
-              abortSignal: ctx.req.signal,
+              abortSignal: ctx.abortSignal,
               prompt: buildTravelBlocksPrompt(targetVideo),
             });
 
@@ -113,7 +113,7 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
             location: targetVideo.location,
             hashtags: targetVideo.hashtags ?? [],
           };
-          await syncSessionTitleWithVideo(ctx.sessionId, targetVideo);
+          await syncSessionTitleWithVideo(ctx.sessionId, ctx.userId, targetVideo);
 
           const buildResult = {
             videoId: targetVideo.id,

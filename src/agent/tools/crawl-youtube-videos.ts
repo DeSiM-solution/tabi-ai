@@ -48,7 +48,7 @@ export function createCrawlYoutubeVideosTool(ctx: AgentToolContext) {
             );
           }
 
-          const videos = await fetchYoutubeVideoData(mergedVideoUrls, ctx.req.signal);
+          const videos = await fetchYoutubeVideoData(mergedVideoUrls, ctx.abortSignal);
           ctx.runtime.latestApifyVideos = videos;
 
           for (const video of videos) {
@@ -67,7 +67,7 @@ export function createCrawlYoutubeVideosTool(ctx: AgentToolContext) {
               hashtags: primaryVideo.hashtags ?? [],
             };
           }
-          await syncSessionTitleWithVideo(ctx.sessionId, primaryVideo);
+          await syncSessionTitleWithVideo(ctx.sessionId, ctx.userId, primaryVideo);
 
           const crawlResult = {
             actorId: YOUTUBE_CONFIG.APIFY.ACTOR_ID,

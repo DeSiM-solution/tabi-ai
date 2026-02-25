@@ -140,17 +140,17 @@ export const handbookInputSchema = z.object({
   videoUrl: z.string().optional(),
   thumbnailUrl: z.string().optional(),
   handbookStyle: z.string().optional(),
-  blocks: z.array(travelBlockSchema).min(1),
+  blocks: z.array(travelBlockSchema).min(1).optional(),
   spot_blocks: z.array(spotBlockSchema).optional(),
   images: z
     .array(
       z.object({
         block_id: z.string(),
-        block_title: z.string(),
-        query: z.string(),
-        alt: z.string(),
-        image_url: z.string(),
-        source: z.enum(['unsplash', 'imagen']),
+        block_title: z.string().optional(),
+        query: z.string().optional(),
+        alt: z.string().optional(),
+        image_url: z.string().optional(),
+        source: z.enum(['unsplash', 'imagen']).optional(),
         source_page: z.string().nullable().optional(),
         credit: z.string().nullable().optional(),
         width: z.number().nullable().optional(),

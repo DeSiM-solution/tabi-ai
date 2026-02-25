@@ -168,107 +168,137 @@ function mergeJsonValues(base: unknown, patch: unknown): unknown {
   };
 }
 
-export async function listSessionSummaries(): Promise<SessionSummaryDto[]> {
+const sessionSummarySelect = {
+  id: true,
+  title: true,
+  description: true,
+  status: true,
+  currentStep: true,
+  failedStep: true,
+  startedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+  );
+}
+
+async function ensureUserExists(userId: string): Promise<void> {
+  await db.user.upsert({
+    where: { id: userId },
+    create: { id: userId },
+    update: {},
+  });
+}
+
+async function findSessionSummaryForUser(
+  userId: string,
+  sessionId: string,
+): Promise<SessionSummaryModel | null> {
+  return db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    select: sessionSummarySelect,
+  });
+}
+
+export async function listSessionSummaries(userId: string): Promise<SessionSummaryDto[]> {
   const sessions = await db.session.findMany({
+    where: { userId },
     orderBy: [
       { updatedAt: 'desc' },
       { id: 'desc' },
     ],
-    select: {
-      id: true,
-      title: true,
-      description: true,
-      status: true,
-      currentStep: true,
-      failedStep: true,
-      startedAt: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    select: sessionSummarySelect,
   });
   return sessions.map(toSessionSummary);
 }
 
 export async function createSession(input: {
+  userId: string;
   id?: string;
   title?: string;
   description?: string | null;
 }): Promise<SessionSummaryDto> {
+  const userId = input.userId;
   const title = input.title?.trim() || 'Untitled Guide';
   const description = input.description?.trim() || null;
+  await ensureUserExists(userId);
 
-  const session = input.id
-    ? await db.session.upsert({
-        where: { id: input.id },
-        create: {
-          id: input.id,
-          title,
-          description,
-          status: SessionStatus.IDLE,
-          startedAt: null,
-        },
-        update: {
-          title,
-          description,
-        },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          currentStep: true,
-          failedStep: true,
-          startedAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      })
-    : await db.session.create({
+  if (input.id) {
+    const updated = await db.session.updateMany({
+      where: {
+        id: input.id,
+        userId,
+      },
+      data: {
+        title,
+        description,
+      },
+    });
+    if (updated.count > 0) {
+      const existing = await findSessionSummaryForUser(userId, input.id);
+      if (existing) return toSessionSummary(existing);
+    }
+
+    try {
+      const session = await db.session.create({
         data: {
+          id: input.id,
+          userId,
           title,
           description,
           status: SessionStatus.IDLE,
         },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          currentStep: true,
-          failedStep: true,
-          startedAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+        select: sessionSummarySelect,
       });
+      return toSessionSummary(session);
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const existing = await findSessionSummaryForUser(userId, input.id);
+      if (!existing) {
+        throw new Error('Session id is already used by another user.');
+      }
+      return toSessionSummary(existing);
+    }
+  }
+
+  const session = await db.session.create({
+    data: {
+      userId,
+      title,
+      description,
+      status: SessionStatus.IDLE,
+    },
+    select: sessionSummarySelect,
+  });
 
   return toSessionSummary(session);
 }
 
 export async function ensureSessionRunning(input: {
+  userId: string;
   id: string;
   title?: string;
   description?: string | null;
 }): Promise<void> {
+  const userId = input.userId;
   const title = input.title?.trim() || null;
   const description = input.description?.trim() || null;
   const now = new Date();
+  await ensureUserExists(userId);
 
-  await db.session.upsert({
-    where: { id: input.id },
-    create: {
+  const updated = await db.session.updateMany({
+    where: {
       id: input.id,
-      title: title ?? 'Untitled Guide',
-      description,
-      status: SessionStatus.RUNNING,
-      startedAt: now,
-      currentStep: null,
-      failedStep: null,
-      lastError: null,
-      completedAt: null,
-      cancelledAt: null,
+      userId,
     },
-    update: {
+    data: {
       title: title ?? undefined,
       description,
       status: SessionStatus.RUNNING,
@@ -279,9 +309,33 @@ export async function ensureSessionRunning(input: {
     },
   });
 
+  if (updated.count === 0) {
+    try {
+      await db.session.create({
+        data: {
+          id: input.id,
+          userId,
+          title: title ?? 'Untitled Guide',
+          description,
+          status: SessionStatus.RUNNING,
+          startedAt: now,
+          currentStep: null,
+          failedStep: null,
+          lastError: null,
+          completedAt: null,
+          cancelledAt: null,
+        },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      throw new Error('Session not found for current user.');
+    }
+  }
+
   await db.session.updateMany({
     where: {
       id: input.id,
+      userId,
       startedAt: null,
     },
     data: {
@@ -292,6 +346,7 @@ export async function ensureSessionRunning(input: {
 
 export async function updateSessionPartial(
   sessionId: string,
+  userId: string,
   updates: {
     title?: string;
     description?: string | null;
@@ -301,48 +356,48 @@ export async function updateSessionPartial(
     lastError?: string | null;
   },
 ): Promise<SessionSummaryDto | null> {
-  try {
-    const session = await db.session.update({
-      where: { id: sessionId },
-      data: {
-        title: updates.title?.trim() || undefined,
-        description:
-          updates.description === undefined
-            ? undefined
-            : updates.description?.trim() || null,
-        status: updates.status,
-        currentStep: updates.currentStep,
-        failedStep: updates.failedStep,
-        lastError:
-          updates.lastError === undefined ? undefined : updates.lastError || null,
-      },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        status: true,
-        currentStep: true,
-        failedStep: true,
-        startedAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-    return toSessionSummary(session);
-  } catch {
-    return null;
-  }
+  const updated = await db.session.updateMany({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    data: {
+      title: updates.title?.trim() || undefined,
+      description:
+        updates.description === undefined
+          ? undefined
+          : updates.description?.trim() || null,
+      status: updates.status,
+      currentStep: updates.currentStep,
+      failedStep: updates.failedStep,
+      lastError:
+        updates.lastError === undefined ? undefined : updates.lastError || null,
+    },
+  });
+  if (updated.count === 0) return null;
+
+  const session = await findSessionSummaryForUser(userId, sessionId);
+  return session ? toSessionSummary(session) : null;
 }
 
-export async function removeSession(sessionId: string): Promise<void> {
-  await db.session.delete({
-    where: { id: sessionId },
+export async function removeSession(sessionId: string, userId: string): Promise<void> {
+  await db.session.deleteMany({
+    where: {
+      id: sessionId,
+      userId,
+    },
   });
 }
 
-export async function getSessionDetail(sessionId: string): Promise<SessionDetailDto | null> {
-  const session = await db.session.findUnique({
-    where: { id: sessionId },
+export async function getSessionDetail(
+  sessionId: string,
+  userId: string,
+): Promise<SessionDetailDto | null> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
     include: {
       state: true,
       steps: {
@@ -402,6 +457,20 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
   };
 }
 
+export async function getSessionStatus(
+  sessionId: string,
+  userId: string,
+): Promise<SessionStatus | null> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    select: { status: true },
+  });
+  return session?.status ?? null;
+}
+
 export interface SessionStateSnapshot {
   context: unknown;
   blocks: unknown;
@@ -415,9 +484,15 @@ export interface SessionStateSnapshot {
 
 export async function getSessionStateSnapshot(
   sessionId: string,
+  userId: string,
 ): Promise<SessionStateSnapshot | null> {
-  const state = await db.sessionState.findUnique({
-    where: { sessionId },
+  const state = await db.sessionState.findFirst({
+    where: {
+      sessionId,
+      session: {
+        userId,
+      },
+    },
     select: {
       context: true,
       blocks: true,
@@ -448,6 +523,7 @@ export async function getSessionStateSnapshot(
 
 export async function upsertSessionState(
   sessionId: string,
+  userId: string,
   state: {
     context?: unknown;
     blocks?: unknown;
@@ -459,6 +535,14 @@ export async function upsertSessionState(
   },
 ): Promise<void> {
   const handbookGeneratedAt = state.handbookHtml ? new Date() : undefined;
+  const ownedSession = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    select: { id: true },
+  });
+  if (!ownedSession) return;
 
   await db.sessionState.upsert({
     where: { sessionId },
@@ -495,6 +579,7 @@ export async function upsertSessionState(
 
 export async function patchSessionState(
   sessionId: string,
+  userId: string,
   state: {
     context?: unknown;
     blocks?: unknown;
@@ -505,7 +590,7 @@ export async function patchSessionState(
     previewPath?: string | null;
   },
 ): Promise<void> {
-  const existing = await getSessionStateSnapshot(sessionId);
+  const existing = await getSessionStateSnapshot(sessionId, userId);
 
   const mergedContext =
     state.context === undefined
@@ -516,7 +601,7 @@ export async function patchSessionState(
       ? undefined
       : mergeJsonValues(existing?.toolOutputs, state.toolOutputs);
 
-  await upsertSessionState(sessionId, {
+  await upsertSessionState(sessionId, userId, {
     ...state,
     context: mergedContext,
     toolOutputs: mergedToolOutputs,
@@ -525,13 +610,17 @@ export async function patchSessionState(
 
 export async function getSessionHandbook(
   sessionId: string,
+  userId: string,
 ): Promise<{
   title: string;
   html: string;
   handbookVersion: number;
 } | null> {
-  const session = await db.session.findUnique({
-    where: { id: sessionId },
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
     select: {
       title: true,
       state: {

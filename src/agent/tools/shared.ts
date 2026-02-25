@@ -2,7 +2,12 @@ import { generateImage } from 'ai';
 import { google } from '@ai-sdk/google';
 import { nanoid } from 'nanoid';
 import { updateSessionPartial } from '@/server/sessions';
-import { getDurationMs, toErrorMessage, withTimeoutSignal } from '@/agent/context/utils';
+import {
+  getDurationMs,
+  isAbortError,
+  toErrorMessage,
+  withTimeoutSignal,
+} from '@/agent/context/utils';
 import {
   ApifyVideoResult,
   HandbookImagePlan,
@@ -15,9 +20,36 @@ import {
   YOUTUBE_URL_REGEX,
 } from '@/agent/tools/types';
 
+const TRAILING_YOUTUBE_PUNCTUATION = /[.,!?;:]+$/;
+
+function uniqueNonEmptyStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+
+  return deduped;
+}
+
+function trimTrailingYouTubePunctuation(url: string): string {
+  let normalized = url.trim();
+  while (TRAILING_YOUTUBE_PUNCTUATION.test(normalized)) {
+    normalized = normalized.replace(TRAILING_YOUTUBE_PUNCTUATION, '');
+  }
+  return normalized;
+}
+
 export function extractYoutubeUrls(input: string): string[] {
   const matched = input.match(YOUTUBE_URL_REGEX) ?? [];
-  return [...new Set(matched.map(url => url.trim()))];
+  return uniqueNonEmptyStrings(
+    matched.map(url => trimTrailingYouTubePunctuation(url)),
+  );
 }
 
 export function normalizeOriginVideoUrl(videoUrl: string | null | undefined): string | null {
@@ -58,9 +90,24 @@ export function ensureVideoThumbnailHeader(
   options: { thumbnailUrl: string | null | undefined; title: string | null | undefined },
 ): string {
   const normalizedThumbnailUrl = normalizeThumbnailUrl(options.thumbnailUrl);
-  if (!normalizedThumbnailUrl) return html;
+  if (!normalizedThumbnailUrl) {
+    // If no thumbnail is provided, ensure no injected thumbnail header remains.
+    if (!html.includes('data-video-thumbnail-header')) return html;
+    return html.replace(
+      /<section[^>]*data-video-thumbnail-header[\s\S]*?<\/section>/gi,
+      '',
+    );
+  }
+  const escapedNormalizedThumbnailUrl = escapeHtmlAttribute(normalizedThumbnailUrl);
 
-  const escapedUrl = escapeHtmlAttribute(normalizedThumbnailUrl);
+  if (
+    !html.includes('data-video-thumbnail-header') &&
+    (html.includes(normalizedThumbnailUrl) || html.includes(escapedNormalizedThumbnailUrl))
+  ) {
+    return html;
+  }
+
+  const escapedUrl = escapedNormalizedThumbnailUrl;
   const rawTitle = typeof options.title === 'string' ? options.title.trim() : '';
   const altText = rawTitle ? `${rawTitle} thumbnail` : 'Video thumbnail';
   const escapedAltText = escapeHtmlAttribute(altText);
@@ -236,13 +283,14 @@ export function pickPrimaryVideoFromCrawl(
 
 export async function syncSessionTitleWithVideo(
   sessionId: string | null,
+  userId: string | null,
   video: ApifyVideoResult | null,
 ): Promise<void> {
-  if (!sessionId || !video) return;
+  if (!sessionId || !userId || !video) return;
   const nextTitle = normalizeSessionTitle(video.title);
   if (!nextTitle) return;
 
-  const updated = await updateSessionPartial(sessionId, { title: nextTitle });
+  const updated = await updateSessionPartial(sessionId, userId, { title: nextTitle });
   if (!updated) {
     console.warn('[chat_api] session-title-sync-skipped', {
       sessionId,
@@ -428,6 +476,31 @@ export function getImageTargetBlocks(
   return selected;
 }
 
+export function buildGeocodeQueryVariants(query: string): string[] {
+  const normalized = query.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const withoutParens = normalized.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const splitByDelimiters = normalized
+    .split(/\s*(?:,|\/|;|\||\s+and\s+|\s+or\s+|&)\s*/i)
+    .map(value => value.trim())
+    .filter(value => value.length > 2);
+  const firstPhrase = normalized.split(',')[0]?.trim() ?? '';
+  const mergedFirstTwo =
+    splitByDelimiters.length >= 2
+      ? `${splitByDelimiters[0]}, ${splitByDelimiters[1]}`
+      : '';
+
+  return uniqueNonEmptyStrings([
+    normalized,
+    withoutParens,
+    normalized.replace(/\s+(?:and|or)\s+/gi, ' ').replace(/\s+/g, ' ').trim(),
+    firstPhrase,
+    mergedFirstTwo,
+    ...splitByDelimiters,
+  ]);
+}
+
 export function validateHandbookImagePlan(
   sourceBlocks: TravelBlock[],
   object: HandbookImagePlan,
@@ -473,6 +546,73 @@ export function validateHandbookImagePlan(
   return errors;
 }
 
+function createUnsplashSourceFallback(query: string): {
+  image_url: string;
+  source_page: string | null;
+  credit: string | null;
+  width: number | null;
+  height: number | null;
+} {
+  const normalizedQuery = query.replace(/\s+/g, ' ').trim();
+  const slug = normalizedQuery.replace(/\s+/g, '-');
+  return {
+    image_url: `https://source.unsplash.com/featured/1600x900/?${encodeURIComponent(normalizedQuery)}`,
+    source_page: `https://unsplash.com/s/photos/${encodeURIComponent(slug)}`,
+    credit: null,
+    width: 1600,
+    height: 900,
+  };
+}
+
+function buildUnsplashQueryCandidates(query: string): string[] {
+  const normalized = query.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const noBoolean = normalized
+    .replace(/\s+(?:and|or)\s+/gi, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const splitByDelimiters = normalized
+    .split(/\s*(?:,|\/|;|\||\s+and\s+|\s+or\s+|&)\s*/i)
+    .map(value => value.trim())
+    .filter(value => value.length > 2);
+  const firstPhrase = normalized.split(',')[0]?.trim() ?? '';
+  const shortened = noBoolean.split(/\s+/).slice(0, 8).join(' ').trim();
+
+  return uniqueNonEmptyStrings([
+    normalized,
+    noBoolean,
+    firstPhrase,
+    shortened,
+    ...splitByDelimiters,
+  ]);
+}
+
+async function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    await new Promise(resolve => setTimeout(resolve, ms));
+    return;
+  }
+  if (signal.aborted) {
+    throw new Error('Request aborted.');
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onAbort = () => {
+      if (timer) clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(new Error('Request aborted.'));
+    };
+    timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export async function fetchUnsplashPhoto(
   query: string,
   requestSignal?: AbortSignal,
@@ -483,57 +623,99 @@ export async function fetchUnsplashPhoto(
   width: number | null;
   height: number | null;
 }> {
+  const normalizedQuery = query.replace(/\s+/g, ' ').trim();
+  if (!normalizedQuery) {
+    throw new Error('Unsplash query cannot be empty.');
+  }
+
+  const sourceFallback = createUnsplashSourceFallback(normalizedQuery);
   const unsplashAccessKey = process.env.UNSPLASH_ACCESS_KEY?.trim();
 
   if (!unsplashAccessKey) {
-    return {
-      image_url: `https://source.unsplash.com/featured/1600x900/?${encodeURIComponent(query)}`,
-      source_page: `https://unsplash.com/s/photos/${encodeURIComponent(query.replace(/\s+/g, '-'))}`,
-      credit: null,
-      width: 1600,
-      height: 900,
-    };
+    return sourceFallback;
   }
 
-  const response = await fetch(
-    `https://api.unsplash.com/search/photos?page=1&per_page=1&orientation=landscape&content_filter=high&query=${encodeURIComponent(query)}`,
-    {
-      method: 'GET',
-      headers: {
-        Authorization: `Client-ID ${unsplashAccessKey}`,
-        'Accept-Version': 'v1',
-      },
-      signal: withTimeoutSignal(15_000, requestSignal),
-    },
-  );
+  const queryCandidates = buildUnsplashQueryCandidates(normalizedQuery);
+  let lastError: string | null = null;
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Unsplash search failed (${response.status}): ${body}`);
+  for (const candidate of queryCandidates) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetch(
+          `https://api.unsplash.com/search/photos?page=1&per_page=1&orientation=landscape&content_filter=high&query=${encodeURIComponent(candidate)}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Client-ID ${unsplashAccessKey}`,
+              'Accept-Version': 'v1',
+            },
+            signal: withTimeoutSignal(15_000, requestSignal),
+          },
+        );
+
+        if (response.status === 403 || response.status === 429) {
+          const body = await response.text();
+          lastError = `Unsplash search failed (${response.status}) for "${candidate}": ${body}`;
+          console.warn('[search_image] unsplash-rate-limit-fallback', {
+            candidate,
+            status: response.status,
+          });
+          return createUnsplashSourceFallback(candidate);
+        }
+
+        if (!response.ok) {
+          const body = await response.text();
+          lastError = `Unsplash search failed (${response.status}) for "${candidate}": ${body}`;
+          const retryable = response.status >= 500 && attempt === 0;
+          if (retryable) {
+            await sleepWithAbort(300, requestSignal);
+            continue;
+          }
+          break;
+        }
+
+        const payload = (await response.json()) as {
+          results?: Array<{
+            width?: number;
+            height?: number;
+            urls?: { regular?: string; full?: string };
+            links?: { html?: string };
+            user?: { name?: string };
+          }>;
+        };
+        const first = payload.results?.[0];
+
+        if (!first?.urls?.regular && !first?.urls?.full) {
+          lastError = `Unsplash returned no image for query "${candidate}"`;
+          break;
+        }
+
+        return {
+          image_url: first.urls?.regular ?? first.urls?.full ?? '',
+          source_page: first.links?.html ?? null,
+          credit: first.user?.name ? `Photo by ${first.user.name} on Unsplash` : null,
+          width: typeof first.width === 'number' ? first.width : null,
+          height: typeof first.height === 'number' ? first.height : null,
+        };
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        lastError = `Unsplash request failed for "${candidate}": ${toErrorMessage(error)}`;
+        if (attempt === 0) {
+          await sleepWithAbort(300, requestSignal);
+          continue;
+        }
+        break;
+      }
+    }
   }
 
-  const payload = (await response.json()) as {
-    results?: Array<{
-      width?: number;
-      height?: number;
-      urls?: { regular?: string; full?: string };
-      links?: { html?: string };
-      user?: { name?: string };
-    }>;
-  };
-  const first = payload.results?.[0];
-
-  if (!first?.urls?.regular && !first?.urls?.full) {
-    throw new Error(`Unsplash returned no image for query "${query}"`);
-  }
-
-  return {
-    image_url: first.urls?.regular ?? first.urls?.full ?? '',
-    source_page: first.links?.html ?? null,
-    credit: first.user?.name ? `Photo by ${first.user.name} on Unsplash` : null,
-    width: typeof first.width === 'number' ? first.width : null,
-    height: typeof first.height === 'number' ? first.height : null,
-  };
+  console.warn('[search_image] unsplash-fallback-source', {
+    query: normalizedQuery,
+    lastError,
+  });
+  return sourceFallback;
 }
 
 function getHandbookImageModelCandidates(): string[] {
@@ -601,16 +783,28 @@ export async function geocodeSpotByQuery(
   query: string,
   requestSignal?: AbortSignal,
 ): Promise<{ lat: number; lng: number } | null> {
-  const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
-    {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'ai-next-travel-guide-agent/1.0',
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'ai-next-travel-guide-agent/1.0',
+        },
+        signal: withTimeoutSignal(15_000, requestSignal),
       },
-      signal: withTimeoutSignal(15_000, requestSignal),
-    },
-  );
+    );
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    console.warn('[resolve_spot_coordinates] geocode-request-failed', {
+      query,
+      message: toErrorMessage(error),
+    });
+    return null;
+  }
 
   if (!response.ok) return null;
 
