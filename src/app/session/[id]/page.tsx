@@ -384,6 +384,7 @@ export default function Chat() {
   const [selectedStyleOption, setSelectedStyleOption] =
     useState<HandbookStyleId>('minimal-tokyo');
   const [setAsSessionDefault, setSetAsSessionDefault] = useState(true);
+  const [editorHost, setEditorHost] = useState<HTMLElement | null>(null);
 
   const didSendInitialInputRef = useRef(false);
   const loggedToolEventsRef = useRef<Set<string>>(new Set());
@@ -492,6 +493,10 @@ export default function Chat() {
     if (!styleFromQuery) return;
     setHandbookStyle(styleFromQuery);
   }, [initialStyle, sessionId]);
+
+  useEffect(() => {
+    setEditorHost(document.getElementById('block-editor-panel-root'));
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1056,10 +1061,6 @@ export default function Chat() {
         ? `Completed ${processState.completedSteps.length}/${SESSION_TOOL_ORDER.length} steps`
         : 'Refine your guide';
 
-  const editorHost =
-    typeof document === 'undefined'
-      ? null
-      : document.getElementById('block-editor-panel-root');
   const showBlocksView = centerViewMode === 'blocks';
   const showHtmlView = centerViewMode === 'html';
   const showBlocksLoadingState = Boolean(
