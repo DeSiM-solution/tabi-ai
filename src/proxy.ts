@@ -13,7 +13,7 @@ function normalizeUserId(value: string | undefined): string | null {
   return trimmed.slice(0, 128);
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const cookieUserId = normalizeUserId(
     request.cookies.get(USER_ID_COOKIE_NAME)?.value,
   );
