@@ -179,10 +179,10 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   const hasPreparedImages = runtime.latestHandbookImages.length > 0;
   const hasBlocks = runtime.latestBlocks.length > 0;
 
-  const manualActiveTools = isManualHandbookRequest
+  const manualActiveTools: PersistedToolName[] | undefined = isManualHandbookRequest
     ? hasPreparedImages && hasBlocks
-      ? (['generate_handbook_html'] as const)
-      : (['search_image', 'generate_image', 'generate_handbook_html'] as const)
+      ? ['generate_handbook_html']
+      : ['search_image', 'generate_image', 'generate_handbook_html']
     : undefined;
   const manualToolChoice = isManualHandbookRequest
     ? hasPreparedImages && hasBlocks

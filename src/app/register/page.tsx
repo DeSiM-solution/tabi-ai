@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { LuGithub, LuLoader, LuUserPlus } from 'react-icons/lu';
 import { FcGoogle } from 'react-icons/fc';
 import { authActions, useAuthStore } from '@/stores/auth-store';
@@ -25,7 +25,7 @@ function toOAuthStartPath(provider: 'google' | 'github', callbackPath: string): 
   return `${path}?callbackUrl=${encodeURIComponent(callbackPath)}`;
 }
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -188,5 +188,27 @@ export default function RegisterPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function RegisterPageFallback() {
+  return (
+    <div className="min-h-screen bg-bg-primary text-text-primary">
+      <div className="mx-auto flex min-h-screen w-full max-w-[420px] items-center px-6 py-10">
+        <section className="w-full rounded-[18px] border border-border-light bg-bg-elevated p-6 shadow-[0_14px_36px_rgba(26,23,20,0.12)]">
+          <div className="flex items-center justify-center py-10">
+            <LuLoader className="h-5 w-5 animate-spin text-text-tertiary" />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<RegisterPageFallback />}>
+      <RegisterPageContent />
+    </Suspense>
   );
 }

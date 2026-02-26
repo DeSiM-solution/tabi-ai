@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { LuGithub, LuLoader, LuLogIn } from 'react-icons/lu';
 import { FcGoogle } from 'react-icons/fc';
 import { authActions, useAuthStore } from '@/stores/auth-store';
@@ -37,7 +37,7 @@ function mapAuthErrorMessage(errorCode: string | null): string | null {
   return 'Login failed. Please try again.';
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -177,5 +177,27 @@ export default function LoginPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function LoginPageFallback() {
+  return (
+    <div className="min-h-screen bg-bg-primary text-text-primary">
+      <div className="mx-auto flex min-h-screen w-full max-w-[420px] items-center px-6 py-10">
+        <section className="w-full rounded-[18px] border border-border-light bg-bg-elevated p-6 shadow-[0_14px_36px_rgba(26,23,20,0.12)]">
+          <div className="flex items-center justify-center py-10">
+            <LuLoader className="h-5 w-5 animate-spin text-text-tertiary" />
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
