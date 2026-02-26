@@ -1,6 +1,6 @@
-import { HandbookLifecycleStatus } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { HANDBOOK_LIFECYCLE_OPTIONS } from '@/lib/handbook-lifecycle';
 import {
   HandbookLifecycleError,
   setSessionHandbookLifecycle,
@@ -8,7 +8,7 @@ import {
 import { getRequestUserId } from '@/server/request-user';
 
 const patchHandbookLifecycleSchema = z.object({
-  lifecycle: z.nativeEnum(HandbookLifecycleStatus),
+  lifecycle: z.enum(HANDBOOK_LIFECYCLE_OPTIONS),
 });
 
 function getSessionId(params: { id: string }): string {

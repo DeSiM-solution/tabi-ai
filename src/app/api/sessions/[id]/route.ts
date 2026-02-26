@@ -1,6 +1,9 @@
-import { SessionStatus, SessionToolName } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import {
+  SESSION_STATUS_VALUES,
+  SESSION_TOOL_NAME_VALUES,
+} from '@/lib/session-enums';
 import {
   getSessionDetail,
   removeSession,
@@ -11,9 +14,9 @@ import { getRequestUserId } from '@/server/request-user';
 const patchSessionSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional().nullable(),
-  status: z.nativeEnum(SessionStatus).optional(),
-  currentStep: z.nativeEnum(SessionToolName).optional().nullable(),
-  failedStep: z.nativeEnum(SessionToolName).optional().nullable(),
+  status: z.enum(SESSION_STATUS_VALUES).optional(),
+  currentStep: z.enum(SESSION_TOOL_NAME_VALUES).optional().nullable(),
+  failedStep: z.enum(SESSION_TOOL_NAME_VALUES).optional().nullable(),
   lastError: z.string().optional().nullable(),
 });
 

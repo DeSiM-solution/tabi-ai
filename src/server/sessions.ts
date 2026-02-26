@@ -1,13 +1,17 @@
 import type { UIMessage } from 'ai';
 import {
-  HandbookLifecycleStatus,
-  MessageRole,
   Prisma,
-  SessionStatus,
-  SessionStepStatus,
-  SessionToolName,
 } from '@prisma/client';
 import db from '@/lib/db';
+import {
+  HANDBOOK_LIFECYCLE_STATUS,
+  SESSION_STATUS,
+  type HandbookLifecycleStatusValue,
+  type MessageRoleValue,
+  type SessionStatusValue,
+  type SessionStepStatusValue,
+  type SessionToolNameValue,
+} from '@/lib/session-enums';
 import {
   formatSessionDateTime,
   resolveSessionTimeValue,
@@ -24,7 +28,7 @@ export interface SessionSummaryDto {
   id: string;
   title: string;
   description: string | null;
-  handbookLifecycle: HandbookLifecycleStatus;
+  handbookLifecycle: HandbookLifecycleStatusValue;
   meta: string;
   isError: boolean;
   status: SessionSummaryStatus;
@@ -38,9 +42,9 @@ export interface SessionDetailDto {
   id: string;
   title: string;
   description: string | null;
-  status: SessionStatus;
-  currentStep: SessionToolName | null;
-  failedStep: SessionToolName | null;
+  status: SessionStatusValue;
+  currentStep: SessionToolNameValue | null;
+  failedStep: SessionToolNameValue | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,7 +54,7 @@ export interface SessionDetailDto {
     spotBlocks: unknown;
     toolOutputs: unknown;
     handbookHtml: string | null;
-    handbookLifecycle: HandbookLifecycleStatus;
+    handbookLifecycle: HandbookLifecycleStatusValue;
     handbookPublishedAt: string | null;
     handbookArchivedAt: string | null;
     handbookVersion: number;
@@ -59,8 +63,8 @@ export interface SessionDetailDto {
   } | null;
   steps: Array<{
     id: string;
-    toolName: SessionToolName;
-    status: SessionStepStatus;
+    toolName: SessionToolNameValue;
+    status: SessionStepStatusValue;
     input: unknown;
     output: unknown;
     errorMessage: string | null;
@@ -79,11 +83,11 @@ interface SessionSummaryModel {
   title: string;
   description: string | null;
   state: {
-    handbookLifecycle: HandbookLifecycleStatus;
+    handbookLifecycle: HandbookLifecycleStatusValue;
   } | null;
-  status: SessionStatus;
-  currentStep: SessionToolName | null;
-  failedStep: SessionToolName | null;
+  status: SessionStatusValue;
+  currentStep: SessionToolNameValue | null;
+  failedStep: SessionToolNameValue | null;
   startedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -101,7 +105,7 @@ function toNullableInputJson(
   return toInputJson(value);
 }
 
-function formatStepLabel(step: SessionToolName | null): string {
+function formatStepLabel(step: SessionToolNameValue | null): string {
   if (!step) return 'idle';
   if (step === 'parse_youtube_input') return 'Parse URL';
   if (step === 'crawl_youtube_videos') return 'Crawl Video';
@@ -112,11 +116,11 @@ function formatStepLabel(step: SessionToolName | null): string {
   return 'Generate Handbook';
 }
 
-function toSessionSummaryStatus(status: SessionStatus): SessionSummaryStatus {
-  if (status === SessionStatus.RUNNING) return 'loading';
-  if (status === SessionStatus.ERROR) return 'error';
-  if (status === SessionStatus.COMPLETED) return 'completed';
-  if (status === SessionStatus.CANCELLED) return 'cancelled';
+function toSessionSummaryStatus(status: SessionStatusValue): SessionSummaryStatus {
+  if (status === SESSION_STATUS.RUNNING) return 'loading';
+  if (status === SESSION_STATUS.ERROR) return 'error';
+  if (status === SESSION_STATUS.COMPLETED) return 'completed';
+  if (status === SESSION_STATUS.CANCELLED) return 'cancelled';
   return 'idle';
 }
 
@@ -138,7 +142,7 @@ function toSessionSummary(model: SessionSummaryModel): SessionSummaryDto {
     id: model.id,
     title: model.title,
     description: model.description,
-    handbookLifecycle: model.state?.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
+    handbookLifecycle: model.state?.handbookLifecycle ?? HANDBOOK_LIFECYCLE_STATUS.DRAFT,
     meta,
     isError: mappedStatus === 'error',
     status: mappedStatus,
@@ -149,9 +153,9 @@ function toSessionSummary(model: SessionSummaryModel): SessionSummaryDto {
   };
 }
 
-function fromMessageRole(role: MessageRole): UIMessage['role'] {
-  if (role === MessageRole.ASSISTANT) return 'assistant';
-  if (role === MessageRole.SYSTEM) return 'system';
+function fromMessageRole(role: MessageRoleValue): UIMessage['role'] {
+  if (role === 'ASSISTANT') return 'assistant';
+  if (role === 'SYSTEM') return 'system';
   return 'user';
 }
 
@@ -324,7 +328,7 @@ export async function createSession(input: {
           userId,
           title,
           description,
-          status: SessionStatus.IDLE,
+          status: SESSION_STATUS.IDLE,
         },
         select: sessionSummarySelect,
       });
@@ -344,7 +348,7 @@ export async function createSession(input: {
       userId,
       title,
       description,
-      status: SessionStatus.IDLE,
+      status: SESSION_STATUS.IDLE,
     },
     select: sessionSummarySelect,
   });
@@ -372,7 +376,7 @@ export async function ensureSessionRunning(input: {
     data: {
       title: title ?? undefined,
       description,
-      status: SessionStatus.RUNNING,
+      status: SESSION_STATUS.RUNNING,
       failedStep: null,
       lastError: null,
       cancelledAt: null,
@@ -388,7 +392,7 @@ export async function ensureSessionRunning(input: {
           userId,
           title: title ?? 'Untitled Guide',
           description,
-          status: SessionStatus.RUNNING,
+          status: SESSION_STATUS.RUNNING,
           startedAt: now,
           currentStep: null,
           failedStep: null,
@@ -421,9 +425,9 @@ export async function updateSessionPartial(
   updates: {
     title?: string;
     description?: string | null;
-    status?: SessionStatus;
-    currentStep?: SessionToolName | null;
-    failedStep?: SessionToolName | null;
+    status?: SessionStatusValue;
+    currentStep?: SessionToolNameValue | null;
+    failedStep?: SessionToolNameValue | null;
     lastError?: string | null;
   },
 ): Promise<SessionSummaryDto | null> {
@@ -469,9 +473,9 @@ export async function getSessionDetail(
     id: string;
     title: string;
     description: string | null;
-    status: SessionStatus;
-    currentStep: SessionToolName | null;
-    failedStep: SessionToolName | null;
+    status: SessionStatusValue;
+    currentStep: SessionToolNameValue | null;
+    failedStep: SessionToolNameValue | null;
     lastError: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -481,7 +485,7 @@ export async function getSessionDetail(
       spotBlocks: Prisma.JsonValue | null;
       toolOutputs: Prisma.JsonValue | null;
       handbookHtml: string | null;
-      handbookLifecycle?: HandbookLifecycleStatus;
+      handbookLifecycle?: HandbookLifecycleStatusValue;
       handbookPublishedAt?: Date | null;
       handbookArchivedAt?: Date | null;
       handbookVersion: number;
@@ -490,8 +494,8 @@ export async function getSessionDetail(
     } | null;
     steps: Array<{
       id: string;
-      toolName: SessionToolName;
-      status: SessionStepStatus;
+      toolName: SessionToolNameValue;
+      status: SessionStepStatusValue;
       input: Prisma.JsonValue | null;
       output: Prisma.JsonValue | null;
       errorMessage: string | null;
@@ -504,7 +508,7 @@ export async function getSessionDetail(
     }>;
     messages: Array<{
       externalId: string;
-      role: MessageRole;
+      role: MessageRoleValue;
       parts: Prisma.JsonValue | null;
       text: string | null;
     }>;
@@ -576,7 +580,7 @@ export async function getSessionDetail(
           toolOutputs: session.state.toolOutputs,
           handbookHtml: session.state.handbookHtml,
           handbookLifecycle:
-            session.state.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
+            session.state.handbookLifecycle ?? HANDBOOK_LIFECYCLE_STATUS.DRAFT,
           handbookPublishedAt: session.state.handbookPublishedAt
             ? session.state.handbookPublishedAt.toISOString()
             : null,
@@ -615,7 +619,7 @@ export async function getSessionDetail(
 export async function getSessionStatus(
   sessionId: string,
   userId: string,
-): Promise<SessionStatus | null> {
+): Promise<SessionStatusValue | null> {
   const session = await db.session.findFirst({
     where: {
       id: sessionId,
@@ -632,7 +636,7 @@ export interface SessionStateSnapshot {
   spotBlocks: unknown;
   toolOutputs: unknown;
   handbookHtml: string | null;
-  handbookLifecycle: HandbookLifecycleStatus;
+  handbookLifecycle: HandbookLifecycleStatusValue;
   handbookPublishedAt: string | null;
   handbookArchivedAt: string | null;
   handbookVersion: number;
@@ -650,7 +654,7 @@ export async function getSessionStateSnapshot(
     spotBlocks: Prisma.JsonValue | null;
     toolOutputs: Prisma.JsonValue | null;
     handbookHtml: string | null;
-    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookLifecycle?: HandbookLifecycleStatusValue;
     handbookPublishedAt?: Date | null;
     handbookArchivedAt?: Date | null;
     handbookVersion: number;
@@ -710,7 +714,7 @@ export async function getSessionStateSnapshot(
     spotBlocks: state.spotBlocks,
     toolOutputs: state.toolOutputs,
     handbookHtml: state.handbookHtml,
-    handbookLifecycle: state.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
+    handbookLifecycle: state.handbookLifecycle ?? HANDBOOK_LIFECYCLE_STATUS.DRAFT,
     handbookPublishedAt: state.handbookPublishedAt
       ? state.handbookPublishedAt.toISOString()
       : null,
@@ -734,7 +738,7 @@ export async function upsertSessionState(
     spotBlocks?: unknown;
     toolOutputs?: unknown;
     handbookHtml?: string | null;
-    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookLifecycle?: HandbookLifecycleStatusValue;
     handbookPublishedAt?: Date | null;
     handbookArchivedAt?: Date | null;
     incrementHandbookVersion?: boolean;
@@ -816,7 +820,7 @@ export async function patchSessionState(
     spotBlocks?: unknown;
     toolOutputs?: unknown;
     handbookHtml?: string | null;
-    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookLifecycle?: HandbookLifecycleStatusValue;
     handbookPublishedAt?: Date | null;
     handbookArchivedAt?: Date | null;
     incrementHandbookVersion?: boolean;
@@ -853,9 +857,9 @@ export class HandbookLifecycleError extends Error {
 export async function setSessionHandbookLifecycle(
   sessionId: string,
   userId: string,
-  lifecycle: HandbookLifecycleStatus,
+  lifecycle: HandbookLifecycleStatusValue,
 ): Promise<{
-  handbookLifecycle: HandbookLifecycleStatus;
+  handbookLifecycle: HandbookLifecycleStatusValue;
   handbookPublishedAt: string | null;
   handbookArchivedAt: string | null;
 } | null> {
@@ -880,7 +884,7 @@ export async function setSessionHandbookLifecycle(
   if (!session) return null;
 
   const existingLifecycle =
-    session.state?.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT;
+    session.state?.handbookLifecycle ?? HANDBOOK_LIFECYCLE_STATUS.DRAFT;
   if (existingLifecycle === lifecycle) {
     return {
       handbookLifecycle: existingLifecycle,
@@ -893,7 +897,7 @@ export async function setSessionHandbookLifecycle(
     };
   }
 
-  if (lifecycle === HandbookLifecycleStatus.PUBLIC) {
+  if (lifecycle === HANDBOOK_LIFECYCLE_STATUS.PUBLIC) {
     const html = session.state?.handbookHtml;
     if (!html || !html.trim()) {
       throw new HandbookLifecycleError(
@@ -909,15 +913,15 @@ export async function setSessionHandbookLifecycle(
     create: {
       sessionId,
       handbookLifecycle: lifecycle,
-      handbookPublishedAt: lifecycle === HandbookLifecycleStatus.PUBLIC ? now : null,
-      handbookArchivedAt: lifecycle === HandbookLifecycleStatus.ARCHIVED ? now : null,
+      handbookPublishedAt: lifecycle === HANDBOOK_LIFECYCLE_STATUS.PUBLIC ? now : null,
+      handbookArchivedAt: lifecycle === HANDBOOK_LIFECYCLE_STATUS.ARCHIVED ? now : null,
     },
     update: {
       handbookLifecycle: lifecycle,
       handbookPublishedAt:
-        lifecycle === HandbookLifecycleStatus.PUBLIC ? now : undefined,
+        lifecycle === HANDBOOK_LIFECYCLE_STATUS.PUBLIC ? now : undefined,
       handbookArchivedAt:
-        lifecycle === HandbookLifecycleStatus.ARCHIVED ? now : undefined,
+        lifecycle === HANDBOOK_LIFECYCLE_STATUS.ARCHIVED ? now : undefined,
     },
   });
 
@@ -987,7 +991,7 @@ export async function getPublicSessionHandbook(
       id: sessionId,
       state: {
         is: {
-          handbookLifecycle: HandbookLifecycleStatus.PUBLIC,
+          handbookLifecycle: HANDBOOK_LIFECYCLE_STATUS.PUBLIC,
         },
       },
     },

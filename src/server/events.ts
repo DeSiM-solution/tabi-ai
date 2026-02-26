@@ -1,12 +1,15 @@
 import type { UIMessage } from 'ai';
 import {
-  MessageRole,
   Prisma,
-  SessionStatus,
-  SessionStepStatus,
-  SessionToolName,
 } from '@prisma/client';
 import db from '@/lib/db';
+import {
+  MESSAGE_ROLE,
+  SESSION_STATUS,
+  SESSION_STEP_STATUS,
+  type MessageRoleValue,
+  type SessionToolNameValue,
+} from '@/lib/session-enums';
 
 function toInputJson(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -34,10 +37,10 @@ function extractText(parts: unknown): string | null {
   return text || null;
 }
 
-function toMessageRole(role: UIMessage['role']): MessageRole {
-  if (role === 'assistant') return MessageRole.ASSISTANT;
-  if (role === 'system') return MessageRole.SYSTEM;
-  return MessageRole.USER;
+function toMessageRole(role: UIMessage['role']): MessageRoleValue {
+  if (role === 'assistant') return MESSAGE_ROLE.ASSISTANT;
+  if (role === 'system') return MESSAGE_ROLE.SYSTEM;
+  return MESSAGE_ROLE.USER;
 }
 
 async function assertOwnedSession(
@@ -111,7 +114,7 @@ export async function upsertChatMessages(
 export async function createSessionStep(input: {
   sessionId: string;
   userId: string;
-  toolName: SessionToolName;
+  toolName: SessionToolNameValue;
   payload?: unknown;
 }): Promise<string> {
   await assertOwnedSession(input.sessionId, input.userId);
@@ -120,7 +123,7 @@ export async function createSessionStep(input: {
     data: {
       sessionId: input.sessionId,
       toolName: input.toolName,
-      status: SessionStepStatus.RUNNING,
+      status: SESSION_STEP_STATUS.RUNNING,
       input: toNullableInputJson(input.payload),
       startedAt: now,
     },
@@ -133,7 +136,7 @@ export async function createSessionStep(input: {
       userId: input.userId,
     },
     data: {
-      status: SessionStatus.RUNNING,
+      status: SESSION_STATUS.RUNNING,
       currentStep: input.toolName,
       failedStep: null,
       lastError: null,
@@ -156,7 +159,7 @@ export async function completeSessionStep(input: {
       sessionId: input.sessionId,
     },
     data: {
-      status: SessionStepStatus.SUCCESS,
+      status: SESSION_STEP_STATUS.SUCCESS,
       output: toNullableInputJson(input.output),
       durationMs: input.durationMs ?? null,
       finishedAt: new Date(),
@@ -168,7 +171,7 @@ export async function failSessionStep(input: {
   stepId: string;
   sessionId: string;
   userId: string;
-  toolName: SessionToolName;
+  toolName: SessionToolNameValue;
   errorMessage: string;
   durationMs?: number;
 }): Promise<void> {
@@ -179,7 +182,7 @@ export async function failSessionStep(input: {
         sessionId: input.sessionId,
       },
       data: {
-        status: SessionStepStatus.ERROR,
+        status: SESSION_STEP_STATUS.ERROR,
         errorMessage: input.errorMessage,
         durationMs: input.durationMs ?? null,
         finishedAt: new Date(),
@@ -191,7 +194,7 @@ export async function failSessionStep(input: {
         userId: input.userId,
       },
       data: {
-        status: SessionStatus.RUNNING,
+        status: SESSION_STATUS.RUNNING,
         failedStep: input.toolName,
         currentStep: input.toolName,
         lastError: input.errorMessage,
@@ -213,7 +216,7 @@ export async function cancelSessionStep(input: {
         sessionId: input.sessionId,
       },
       data: {
-        status: SessionStepStatus.CANCELLED,
+        status: SESSION_STEP_STATUS.CANCELLED,
         durationMs: input.durationMs ?? null,
         finishedAt: new Date(),
       },
@@ -224,7 +227,7 @@ export async function cancelSessionStep(input: {
         userId: input.userId,
       },
       data: {
-        status: SessionStatus.CANCELLED,
+        status: SESSION_STATUS.CANCELLED,
         cancelledAt: new Date(),
         currentStep: null,
       },
@@ -241,11 +244,11 @@ export async function markSessionCompleted(
       id: sessionId,
       userId,
       status: {
-        not: SessionStatus.CANCELLED,
+        not: SESSION_STATUS.CANCELLED,
       },
     },
     data: {
-      status: SessionStatus.COMPLETED,
+      status: SESSION_STATUS.COMPLETED,
       currentStep: null,
       failedStep: null,
       lastError: null,
@@ -264,7 +267,7 @@ export async function markSessionCancelled(
       userId,
     },
     data: {
-      status: SessionStatus.CANCELLED,
+      status: SESSION_STATUS.CANCELLED,
       cancelledAt: new Date(),
       currentStep: null,
     },
@@ -275,18 +278,18 @@ export async function markSessionError(
   sessionId: string,
   userId: string,
   errorMessage: string,
-  options: { failedStep?: SessionToolName | null } = {},
+  options: { failedStep?: SessionToolNameValue | null } = {},
 ): Promise<void> {
   await db.session.updateMany({
     where: {
       id: sessionId,
       userId,
       status: {
-        not: SessionStatus.CANCELLED,
+        not: SESSION_STATUS.CANCELLED,
       },
     },
     data: {
-      status: SessionStatus.ERROR,
+      status: SESSION_STATUS.ERROR,
       lastError: errorMessage,
       failedStep: options.failedStep === undefined ? undefined : options.failedStep,
       currentStep: options.failedStep === undefined ? undefined : options.failedStep,

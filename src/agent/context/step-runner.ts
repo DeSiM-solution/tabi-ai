@@ -5,7 +5,6 @@ import {
   failSessionStep,
 } from '@/server/events';
 import { getSessionStatus } from '@/server/sessions';
-import { SessionStatus } from '@prisma/client';
 import type { AgentRuntimeState } from './types';
 import { isAbortError, getDurationMs, toErrorMessage } from './utils';
 import { persistSessionSnapshot } from './persistence';
@@ -30,7 +29,7 @@ export function createRunToolStep(options: {
     }
 
     const status = await getSessionStatus(sessionId, userId);
-    if (status === SessionStatus.CANCELLED) {
+    if (status === 'CANCELLED') {
       runtime.requestAborted = true;
       throw new Error('Session was cancelled.');
     }
