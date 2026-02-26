@@ -31,6 +31,12 @@ enum SessionStepStatus {
   CANCELLED
 }
 
+enum HandbookLifecycleStatus {
+  DRAFT
+  ARCHIVED
+  PUBLIC
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -132,6 +138,9 @@ model SessionState {
   spotBlocks   Json?
   toolOutputs  Json?
   handbookHtml String?
+  handbookLifecycle HandbookLifecycleStatus @default(DRAFT)
+  handbookPublishedAt DateTime?
+  handbookArchivedAt DateTime?
   handbookVersion Int      @default(0)
   handbookGeneratedAt DateTime?
   previewPath String?
@@ -140,4 +149,6 @@ model SessionState {
   updatedAt DateTime @updatedAt
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([handbookLifecycle, updatedAt])
 }

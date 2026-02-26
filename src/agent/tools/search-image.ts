@@ -2,11 +2,12 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { runStructuredTask } from '@/lib/model-management';
 import type { AgentToolContext } from '@/agent/context/types';
-import { getDurationMs } from '@/agent/context/utils';
+import { getDurationMs, toErrorMessage } from '@/agent/context/utils';
 import { handbookSearchImagePlanPrompt } from '@/agent/prompts/image-query-planning';
 import { handbookImageAssetSchema, handbookImagePlanSchema, MAX_HANDBOOK_IMAGES } from './types';
 import {
   fetchUnsplashPhoto,
+  generateHandbookImageByPrompt,
   getImageTargetBlocks,
   validateHandbookImagePlan,
 } from './shared';
@@ -58,24 +59,46 @@ export function createSearchImageTool(ctx: AgentToolContext) {
             if (!matchedBlock) {
               throw new Error(`Unknown block_id in search_image plan: ${item.block_id}`);
             }
-            const unsplash = await fetchUnsplashPhoto(item.query, ctx.abortSignal);
-            return {
-              block_id: item.block_id,
-              block_title: matchedBlock.title,
-              query: item.query,
-              alt: item.alt,
-              image_url: unsplash.image_url,
-              source: 'unsplash' as const,
-              source_page: unsplash.source_page,
-              credit: unsplash.credit,
-              width: unsplash.width,
-              height: unsplash.height,
-            };
+            try {
+              const unsplash = await fetchUnsplashPhoto(item.query, ctx.abortSignal);
+              return {
+                block_id: item.block_id,
+                block_title: matchedBlock.title,
+                query: item.query,
+                alt: item.alt,
+                image_url: unsplash.image_url,
+                source: 'unsplash' as const,
+                source_page: unsplash.source_page,
+                credit: unsplash.credit,
+                width: unsplash.width,
+                height: unsplash.height,
+              };
+            } catch (unsplashError) {
+              console.warn('[search_image] unsplash-item-fallback-generate', {
+                blockId: item.block_id,
+                query: item.query,
+                message: toErrorMessage(unsplashError),
+              });
+              const generated = await generateHandbookImageByPrompt(item.prompt, ctx.abortSignal);
+              return {
+                block_id: item.block_id,
+                block_title: matchedBlock.title,
+                query: item.query,
+                alt: item.alt,
+                image_url: generated.image_url,
+                source: 'imagen' as const,
+                source_page: null,
+                credit: `Generated with ${generated.model_id} (fallback from search_image)`,
+                width: null,
+                height: null,
+              };
+            }
           }),
         );
 
         ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(images);
         ctx.runtime.latestImageMode = 'search_image';
+        const fallbackGeneratedCount = images.filter(image => image.source === 'imagen').length;
 
         const output = {
           mode: 'search_image' as const,
@@ -87,6 +110,7 @@ export function createSearchImageTool(ctx: AgentToolContext) {
         console.log('[search_image] success', {
           durationMs: getDurationMs(startedAt),
           imageCount: ctx.runtime.latestHandbookImages.length,
+          fallbackGeneratedCount,
           plannerModel,
         });
         console.log('[search_image] output-json', JSON.stringify(output, null, 2));

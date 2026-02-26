@@ -24,6 +24,7 @@ import {
   LuChevronUp,
   LuEllipsisVertical,
 } from 'react-icons/lu';
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 import {
   BLOCK_TYPES,
   createBlockId,
@@ -128,6 +129,9 @@ export function BlockEditorWorkspace({
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [toolbarOpenBlockId, setToolbarOpenBlockId] = useState<string | null>(null);
+  const [pendingDeleteBlockId, setPendingDeleteBlockId] = useState<string | null>(
+    null,
+  );
   const [categoryPickerBlockId, setCategoryPickerBlockId] = useState<string | null>(
     null,
   );
@@ -261,6 +265,9 @@ export function BlockEditorWorkspace({
 
   if (!session) return null;
   const thumbnailUrl = session.thumbnailUrl.trim();
+  const pendingDeleteBlock = pendingDeleteBlockId
+    ? (session.blocks.find(block => block.block_id === pendingDeleteBlockId) ?? null)
+    : null;
   const toolbarBlockIndex = toolbarOpenBlockId
     ? session.blocks.findIndex(block => block.block_id === toolbarOpenBlockId)
     : -1;
@@ -306,6 +313,18 @@ export function BlockEditorWorkspace({
       ...session,
       blocks: session.blocks.filter((_, i) => i !== index),
     });
+  };
+
+  const confirmDeleteBlock = () => {
+    if (!pendingDeleteBlock) {
+      setPendingDeleteBlockId(null);
+      return;
+    }
+    const targetBlockId = pendingDeleteBlock.block_id;
+    setPendingDeleteBlockId(null);
+    const targetIndex = session.blocks.findIndex(block => block.block_id === targetBlockId);
+    if (targetIndex < 0) return;
+    deleteBlock(targetIndex);
   };
 
   const updateBlock = (
@@ -974,8 +993,10 @@ export function BlockEditorWorkspace({
               <button
                 type="button"
                 onClick={() => {
+                  const targetBlock = session.blocks[toolbarBlockIndex];
                   closeToolbar();
-                  deleteBlock(toolbarBlockIndex);
+                  if (!targetBlock) return;
+                  setPendingDeleteBlockId(targetBlock.block_id);
                 }}
                 data-tooltip="Delete block"
                 aria-label="delete block"
@@ -989,6 +1010,15 @@ export function BlockEditorWorkspace({
             document.body,
           )
         : null}
+
+      <DeleteConfirmationDialog
+        open={Boolean(pendingDeleteBlock)}
+        title="Delete Block?"
+        description="Are you sure you want to delete this block?"
+        confirmLabel="Delete"
+        onCancel={() => setPendingDeleteBlockId(null)}
+        onConfirm={confirmDeleteBlock}
+      />
 
     </div>
   );

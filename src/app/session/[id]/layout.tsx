@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
+  LuChevronDown,
+  LuCheck,
   LuCode,
   LuClock3,
   LuDownload,
@@ -24,9 +26,14 @@ import {
 } from 'react-icons/lu';
 import { toast } from 'sonner';
 import {
+  getHandbookLifecycleLabel,
+  type HandbookLifecycle,
+} from '@/lib/handbook-lifecycle';
+import {
   useSessionsStore,
   sessionsActions,
 } from '@/stores/sessions-store';
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 import { useSessionStore } from '@/stores/session-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
 import { UserCenterPanel } from '@/components/user-center-panel';
@@ -49,6 +56,21 @@ interface SessionContextMenuState {
 const CHAT_PANEL_MIN_WIDTH = 300;
 const CHAT_PANEL_MAX_WIDTH = 600;
 const CHAT_PANEL_DEFAULT_WIDTH = 430;
+const HANDBOOK_LIFECYCLE_OPTIONS: HandbookLifecycle[] = [
+  'DRAFT',
+  'PUBLIC',
+  'ARCHIVED',
+];
+
+function getLifecycleBadgeClassName(lifecycle: HandbookLifecycle): string {
+  if (lifecycle === 'PUBLIC') {
+    return 'bg-emerald-50 text-emerald-700';
+  }
+  if (lifecycle === 'ARCHIVED') {
+    return 'bg-zinc-100 text-zinc-600';
+  }
+  return 'bg-amber-50 text-amber-700';
+}
 
 export default function SessionDetailLayout({
   children,
@@ -57,6 +79,7 @@ export default function SessionDetailLayout({
   const params = useParams<{ id: string }>();
   const activeSessionId = typeof params.id === 'string' ? params.id : '';
   const sessionItems = useSessionsStore(state => state.sessions);
+  const activeSessionSummary = sessionItems.find(item => item.id === activeSessionId) ?? null;
   const {
     centerViewMode,
     editorSession,
@@ -67,19 +90,31 @@ export default function SessionDetailLayout({
     useSessionEditorSnapshot(activeSessionId);
   const hasBlocks = Boolean(editorSession);
   const hasHtml = Boolean(handbookHtml || handbookPreviewUrl);
+  const handbookLifecycle = activeSessionSummary?.handbookLifecycle ?? 'DRAFT';
+  const isHandbookPublic = handbookLifecycle === 'PUBLIC';
   const guidePreviewPath = activeSessionId ? `/api/guide/${activeSessionId}` : null;
+  const publicGuidePath = activeSessionId ? `/api/public/guide/${activeSessionId}` : null;
   const previewTarget = handbookPreviewUrl || guidePreviewPath;
   const isProcessBusy = useSessionStore(state => state.loading);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(
+    null,
+  );
   const [renameDraft, setRenameDraft] = useState('');
   const [chatPanelWidth, setChatPanelWidth] = useState(CHAT_PANEL_DEFAULT_WIDTH);
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
+  const [isLifecycleMenuOpen, setIsLifecycleMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const lifecycleMenuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const chatResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   useHydrateSessionsStore();
+  const pendingDeleteSession = pendingDeleteSessionId
+    ? (sessionItems.find(item => item.id === pendingDeleteSessionId) ?? null)
+    : null;
 
   useEffect(() => {
     return () => {
@@ -159,6 +194,38 @@ export default function SessionDetailLayout({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!isLifecycleMenuOpen) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && lifecycleMenuRef.current?.contains(target)) return;
+      setIsLifecycleMenuOpen(false);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsLifecycleMenuOpen(false);
+    };
+
+    const closeOnBlur = () => setIsLifecycleMenuOpen(false);
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('blur', closeOnBlur);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('blur', closeOnBlur);
+    };
+  }, [isLifecycleMenuOpen]);
+
+  useEffect(() => {
+    if (centerViewMode === 'html') return;
+    setIsLifecycleMenuOpen(false);
+  }, [centerViewMode]);
+
   const openSessionContextMenu = (
     event: React.MouseEvent<HTMLElement>,
     sessionId: string,
@@ -197,7 +264,7 @@ export default function SessionDetailLayout({
     cancelRenameSession();
   };
 
-  const deleteSession = (sessionId: string) => {
+  const requestDeleteSession = (sessionId: string) => {
     const target = sessionItems.find(item => item.id === sessionId);
     if (!target) return;
 
@@ -205,16 +272,22 @@ export default function SessionDetailLayout({
     if (renamingSessionId === sessionId) {
       cancelRenameSession();
     }
+    setPendingDeleteSessionId(sessionId);
+  };
 
-    const shouldDelete = window.confirm(
-      `Delete "${target.title}"? This action cannot be undone.`,
-    );
-    if (!shouldDelete) return;
+  const confirmDeleteSession = () => {
+    if (!pendingDeleteSession) {
+      setPendingDeleteSessionId(null);
+      return;
+    }
 
-    const nextSessionId = sessionItems.find(item => item.id !== sessionId)?.id ?? null;
-    sessionsActions.removeSession(sessionId);
+    const deletedSessionId = pendingDeleteSession.id;
+    setPendingDeleteSessionId(null);
+    const nextSessionId =
+      sessionItems.find(item => item.id !== deletedSessionId)?.id ?? null;
+    sessionsActions.removeSession(deletedSessionId);
 
-    if (activeSessionId === sessionId) {
+    if (activeSessionId === deletedSessionId) {
       if (nextSessionId) {
         router.push(`/session/${nextSessionId}`);
       } else {
@@ -258,15 +331,57 @@ export default function SessionDetailLayout({
   };
 
   const copyShareLink = async () => {
+    if (!isHandbookPublic || !publicGuidePath) {
+      toast.error('Publish this handbook before sharing.');
+      return;
+    }
     try {
-      const target = previewTarget
-        ? new URL(previewTarget, window.location.origin).toString()
-        : window.location.href;
+      const target = new URL(publicGuidePath, window.location.origin).toString();
       await copyTextToClipboard(target);
-      toast.success('Link copied to clipboard');
+      toast.success('Public link copied to clipboard');
     } catch (error) {
       console.error('[session-layout] copy-share-link-failed', error);
       toast.error('Failed to copy link');
+    }
+  };
+
+  const updateHandbookLifecycle = async (nextLifecycle: HandbookLifecycle) => {
+    if (!activeSessionId || isUpdatingLifecycle) return;
+    const previousLifecycle = handbookLifecycle;
+    if (nextLifecycle === previousLifecycle) return;
+
+    if (nextLifecycle === 'PUBLIC' && !hasHtml) {
+      toast.error('Generate handbook HTML before publishing.');
+      return;
+    }
+
+    sessionsActions.updateSession(activeSessionId, {
+      handbookLifecycle: nextLifecycle,
+    });
+    setIsUpdatingLifecycle(true);
+    setIsLifecycleMenuOpen(false);
+    try {
+      const response = await fetch(`/api/sessions/${activeSessionId}/handbook-lifecycle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lifecycle: nextLifecycle }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || `Failed to update lifecycle (${response.status})`);
+      }
+      await sessionsActions.hydrateFromServer();
+      toast.success(`Handbook moved to ${getHandbookLifecycleLabel(nextLifecycle)}.`);
+    } catch (error) {
+      sessionsActions.updateSession(activeSessionId, {
+        handbookLifecycle: previousLifecycle,
+      });
+      console.error('[session-layout] update-handbook-lifecycle-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update handbook lifecycle.');
+    } finally {
+      setIsUpdatingLifecycle(false);
     }
   };
 
@@ -421,9 +536,20 @@ export default function SessionDetailLayout({
                               {session.isError ? (
                                 'Error'
                               ) : (
-                                <span className="inline-flex items-center gap-1">
-                                  <LuClock3 className="h-3 w-3" />
-                                  {session.meta}
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1">
+                                    <LuClock3 className="h-3 w-3" />
+                                    {session.meta}
+                                  </span>
+                                  <span
+                                    className={`inline-flex h-5 items-center rounded-[999px] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] ${getLifecycleBadgeClassName(
+                                      session.handbookLifecycle ?? 'DRAFT',
+                                    )}`}
+                                  >
+                                    {getHandbookLifecycleLabel(
+                                      session.handbookLifecycle ?? 'DRAFT',
+                                    )}
+                                  </span>
                                 </span>
                               )}
                             </p>
@@ -478,6 +604,60 @@ export default function SessionDetailLayout({
 
                   {centerViewMode === 'html' ? (
                     <>
+                      <div
+                        ref={lifecycleMenuRef}
+                        className="relative flex items-center rounded-[8px] bg-bg-secondary p-[3px]"
+                      >
+                        <button
+                          type="button"
+                          aria-label="Select handbook status"
+                          aria-haspopup="menu"
+                          aria-expanded={isLifecycleMenuOpen}
+                          onClick={() => setIsLifecycleMenuOpen(previous => !previous)}
+                          disabled={isUpdatingLifecycle}
+                          className="inline-flex h-8 min-w-[132px] items-center justify-between gap-2 rounded-[6px] bg-bg-elevated px-[10px] text-[12px] font-medium text-text-primary transition hover:brightness-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <span>{getHandbookLifecycleLabel(handbookLifecycle)}</span>
+                          <LuChevronDown
+                            className={`h-[14px] w-[14px] text-text-tertiary transition-transform ${
+                              isLifecycleMenuOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                        {isLifecycleMenuOpen ? (
+                          <div
+                            role="menu"
+                            aria-label="Handbook status options"
+                            className="absolute left-0 top-[calc(100%+6px)] z-40 min-w-[176px] overflow-hidden rounded-[8px] border border-border-light bg-bg-elevated p-1 shadow-[0_8px_24px_rgba(45,42,38,0.12)]"
+                          >
+                            {HANDBOOK_LIFECYCLE_OPTIONS.map(lifecycle => {
+                              const isSelected = lifecycle === handbookLifecycle;
+                              const publishBlocked = lifecycle === 'PUBLIC' && !hasHtml;
+                              return (
+                                <button
+                                  key={lifecycle}
+                                  type="button"
+                                  role="menuitemradio"
+                                  aria-checked={isSelected}
+                                  onClick={() => {
+                                    if (publishBlocked || isSelected) {
+                                      setIsLifecycleMenuOpen(false);
+                                      return;
+                                    }
+                                    void updateHandbookLifecycle(lifecycle);
+                                  }}
+                                  disabled={publishBlocked || isUpdatingLifecycle}
+                                  className="flex w-full items-center justify-between rounded-[6px] px-2.5 py-2 text-left text-[12px] font-medium text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:text-text-tertiary disabled:opacity-60"
+                                >
+                                  <span>{getHandbookLifecycleLabel(lifecycle)}</span>
+                                  {isSelected ? <LuCheck className="h-[13px] w-[13px]" /> : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div className="flex items-center gap-0.5 rounded-[8px] bg-bg-secondary p-[3px]">
                         <button
                           type="button"
@@ -532,8 +712,9 @@ export default function SessionDetailLayout({
                       <button
                         type="button"
                         onClick={() => void copyShareLink()}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95"
-                        aria-label="Copy link"
+                        disabled={!isHandbookPublic}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
+                        aria-label="Copy public link"
                       >
                         <LuShare className="h-[18px] w-[18px]" />
                       </button>
@@ -622,7 +803,7 @@ export default function SessionDetailLayout({
           <div className="mx-1 my-1 h-px bg-border-light" />
           <button
             type="button"
-            onClick={() => deleteSession(contextMenu.sessionId)}
+            onClick={() => requestDeleteSession(contextMenu.sessionId)}
             className="flex w-full items-center gap-[10px] rounded-[6px] px-3 py-2 text-left text-[13px] font-normal text-accent-secondary transition hover:bg-bg-secondary/70"
           >
             <LuTrash2 className="h-[15px] w-[15px] shrink-0 text-accent-secondary" />
@@ -630,6 +811,14 @@ export default function SessionDetailLayout({
           </button>
         </div>
       ) : null}
+      <DeleteConfirmationDialog
+        open={Boolean(pendingDeleteSession)}
+        title="Delete Guide?"
+        description="This will permanently delete this guide and all associated data including videos, images, and chat history. This action cannot be undone."
+        confirmLabel="Delete"
+        onCancel={() => setPendingDeleteSessionId(null)}
+        onConfirm={confirmDeleteSession}
+      />
     </div>
   );
 }

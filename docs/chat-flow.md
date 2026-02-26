@@ -107,11 +107,12 @@
 1. 从 blocks 里挑图像目标（优先 spot/food/...）
 2. 调 `runStructuredTask(task='handbook_image_query_planning')` 生成 Unsplash 查询计划
 3. 调 Unsplash API 拉真实图片
-4. 保存为 `source='unsplash'`
+4. 优先保存为 `source='unsplash'`（失败时回退为 `source='imagen'`）
 - 输出：`{ mode, planner_model, image_count, images[] }`
 
 说明：
-- 若没配置 `UNSPLASH_ACCESS_KEY`，会退化为 `source.unsplash.com/featured` 兜底 URL。
+- 不再使用 `source.unsplash.com/featured` 作为兜底（该链接不稳定且容易裂图）。
+- 当 Unsplash API 不可用、限流或无结果时，会在 `search_image` 内自动回退到 Imagen 生成，`images[].source` 会标记为 `imagen`。
 
 ### 4.6 `generate_image`
 - 输入：`{ count?: 1..6 }`

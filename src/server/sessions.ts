@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai';
 import {
+  HandbookLifecycleStatus,
   MessageRole,
   Prisma,
   SessionStatus,
@@ -23,6 +24,7 @@ export interface SessionSummaryDto {
   id: string;
   title: string;
   description: string | null;
+  handbookLifecycle: HandbookLifecycleStatus;
   meta: string;
   isError: boolean;
   status: SessionSummaryStatus;
@@ -48,6 +50,9 @@ export interface SessionDetailDto {
     spotBlocks: unknown;
     toolOutputs: unknown;
     handbookHtml: string | null;
+    handbookLifecycle: HandbookLifecycleStatus;
+    handbookPublishedAt: string | null;
+    handbookArchivedAt: string | null;
     handbookVersion: number;
     handbookGeneratedAt: string | null;
     previewPath: string | null;
@@ -73,6 +78,9 @@ interface SessionSummaryModel {
   id: string;
   title: string;
   description: string | null;
+  state: {
+    handbookLifecycle: HandbookLifecycleStatus;
+  } | null;
   status: SessionStatus;
   currentStep: SessionToolName | null;
   failedStep: SessionToolName | null;
@@ -130,6 +138,7 @@ function toSessionSummary(model: SessionSummaryModel): SessionSummaryDto {
     id: model.id,
     title: model.title,
     description: model.description,
+    handbookLifecycle: model.state?.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
     meta,
     isError: mappedStatus === 'error',
     status: mappedStatus,
@@ -168,7 +177,35 @@ function mergeJsonValues(base: unknown, patch: unknown): unknown {
   };
 }
 
+function isMissingHandbookLifecycleColumnsError(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code !== 'P2021' && error.code !== 'P2022') return false;
+  const message = error.message || '';
+  return (
+    message.includes('handbookLifecycle')
+    || message.includes('handbookPublishedAt')
+    || message.includes('handbookArchivedAt')
+  );
+}
+
 const sessionSummarySelect = {
+  id: true,
+  title: true,
+  description: true,
+  state: {
+    select: {
+      handbookLifecycle: true,
+    },
+  },
+  status: true,
+  currentStep: true,
+  failedStep: true,
+  startedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+const legacySessionSummarySelect = {
   id: true,
   title: true,
   description: true,
@@ -198,25 +235,59 @@ async function findSessionSummaryForUser(
   userId: string,
   sessionId: string,
 ): Promise<SessionSummaryModel | null> {
-  return db.session.findFirst({
-    where: {
-      id: sessionId,
-      userId,
-    },
-    select: sessionSummarySelect,
-  });
+  try {
+    return await db.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      select: sessionSummarySelect,
+    });
+  } catch (error) {
+    if (!isMissingHandbookLifecycleColumnsError(error)) throw error;
+    const legacy = await db.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      select: legacySessionSummarySelect,
+    });
+    if (!legacy) return null;
+    return {
+      ...legacy,
+      state: null,
+    };
+  }
 }
 
 export async function listSessionSummaries(userId: string): Promise<SessionSummaryDto[]> {
-  const sessions = await db.session.findMany({
-    where: { userId },
-    orderBy: [
-      { updatedAt: 'desc' },
-      { id: 'desc' },
-    ],
-    select: sessionSummarySelect,
-  });
-  return sessions.map(toSessionSummary);
+  try {
+    const sessions = await db.session.findMany({
+      where: { userId },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
+      select: sessionSummarySelect,
+    });
+    return sessions.map(toSessionSummary);
+  } catch (error) {
+    if (!isMissingHandbookLifecycleColumnsError(error)) throw error;
+    const sessions = await db.session.findMany({
+      where: { userId },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
+      select: legacySessionSummarySelect,
+    });
+    return sessions.map(session =>
+      toSessionSummary({
+        ...session,
+        state: null,
+      }),
+    );
+  }
 }
 
 export async function createSession(input: {
@@ -380,34 +451,110 @@ export async function updateSessionPartial(
   return session ? toSessionSummary(session) : null;
 }
 
-export async function removeSession(sessionId: string, userId: string): Promise<void> {
-  await db.session.deleteMany({
+export async function removeSession(sessionId: string, userId: string): Promise<boolean> {
+  const result = await db.session.deleteMany({
     where: {
       id: sessionId,
       userId,
     },
   });
+  return result.count > 0;
 }
 
 export async function getSessionDetail(
   sessionId: string,
   userId: string,
 ): Promise<SessionDetailDto | null> {
-  const session = await db.session.findFirst({
-    where: {
-      id: sessionId,
-      userId,
-    },
-    include: {
-      state: true,
-      steps: {
-        orderBy: { createdAt: 'asc' },
+  let session: {
+    id: string;
+    title: string;
+    description: string | null;
+    status: SessionStatus;
+    currentStep: SessionToolName | null;
+    failedStep: SessionToolName | null;
+    lastError: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    state: {
+      context: Prisma.JsonValue | null;
+      blocks: Prisma.JsonValue | null;
+      spotBlocks: Prisma.JsonValue | null;
+      toolOutputs: Prisma.JsonValue | null;
+      handbookHtml: string | null;
+      handbookLifecycle?: HandbookLifecycleStatus;
+      handbookPublishedAt?: Date | null;
+      handbookArchivedAt?: Date | null;
+      handbookVersion: number;
+      handbookGeneratedAt: Date | null;
+      previewPath: string | null;
+    } | null;
+    steps: Array<{
+      id: string;
+      toolName: SessionToolName;
+      status: SessionStepStatus;
+      input: Prisma.JsonValue | null;
+      output: Prisma.JsonValue | null;
+      errorMessage: string | null;
+      durationMs: number | null;
+      retryCount: number;
+      startedAt: Date | null;
+      finishedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+    messages: Array<{
+      externalId: string;
+      role: MessageRole;
+      parts: Prisma.JsonValue | null;
+      text: string | null;
+    }>;
+  } | null = null;
+
+  try {
+    session = await db.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
       },
-      messages: {
-        orderBy: { seq: 'asc' },
+      include: {
+        state: true,
+        steps: {
+          orderBy: { createdAt: 'asc' },
+        },
+        messages: {
+          orderBy: { seq: 'asc' },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    if (!isMissingHandbookLifecycleColumnsError(error)) throw error;
+    session = await db.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      include: {
+        state: {
+          select: {
+            context: true,
+            blocks: true,
+            spotBlocks: true,
+            toolOutputs: true,
+            handbookHtml: true,
+            handbookVersion: true,
+            handbookGeneratedAt: true,
+            previewPath: true,
+          },
+        },
+        steps: {
+          orderBy: { createdAt: 'asc' },
+        },
+        messages: {
+          orderBy: { seq: 'asc' },
+        },
+      },
+    });
+  }
 
   if (!session) return null;
 
@@ -428,6 +575,14 @@ export async function getSessionDetail(
           spotBlocks: session.state.spotBlocks,
           toolOutputs: session.state.toolOutputs,
           handbookHtml: session.state.handbookHtml,
+          handbookLifecycle:
+            session.state.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
+          handbookPublishedAt: session.state.handbookPublishedAt
+            ? session.state.handbookPublishedAt.toISOString()
+            : null,
+          handbookArchivedAt: session.state.handbookArchivedAt
+            ? session.state.handbookArchivedAt.toISOString()
+            : null,
           handbookVersion: session.state.handbookVersion,
           handbookGeneratedAt: session.state.handbookGeneratedAt
             ? session.state.handbookGeneratedAt.toISOString()
@@ -477,6 +632,9 @@ export interface SessionStateSnapshot {
   spotBlocks: unknown;
   toolOutputs: unknown;
   handbookHtml: string | null;
+  handbookLifecycle: HandbookLifecycleStatus;
+  handbookPublishedAt: string | null;
+  handbookArchivedAt: string | null;
   handbookVersion: number;
   handbookGeneratedAt: string | null;
   previewPath: string | null;
@@ -486,24 +644,63 @@ export async function getSessionStateSnapshot(
   sessionId: string,
   userId: string,
 ): Promise<SessionStateSnapshot | null> {
-  const state = await db.sessionState.findFirst({
-    where: {
-      sessionId,
-      session: {
-        userId,
+  let state: {
+    context: Prisma.JsonValue | null;
+    blocks: Prisma.JsonValue | null;
+    spotBlocks: Prisma.JsonValue | null;
+    toolOutputs: Prisma.JsonValue | null;
+    handbookHtml: string | null;
+    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookPublishedAt?: Date | null;
+    handbookArchivedAt?: Date | null;
+    handbookVersion: number;
+    handbookGeneratedAt: Date | null;
+    previewPath: string | null;
+  } | null = null;
+
+  try {
+    state = await db.sessionState.findFirst({
+      where: {
+        sessionId,
+        session: {
+          userId,
+        },
       },
-    },
-    select: {
-      context: true,
-      blocks: true,
-      spotBlocks: true,
-      toolOutputs: true,
-      handbookHtml: true,
-      handbookVersion: true,
-      handbookGeneratedAt: true,
-      previewPath: true,
-    },
-  });
+      select: {
+        context: true,
+        blocks: true,
+        spotBlocks: true,
+        toolOutputs: true,
+        handbookHtml: true,
+        handbookLifecycle: true,
+        handbookPublishedAt: true,
+        handbookArchivedAt: true,
+        handbookVersion: true,
+        handbookGeneratedAt: true,
+        previewPath: true,
+      },
+    });
+  } catch (error) {
+    if (!isMissingHandbookLifecycleColumnsError(error)) throw error;
+    state = await db.sessionState.findFirst({
+      where: {
+        sessionId,
+        session: {
+          userId,
+        },
+      },
+      select: {
+        context: true,
+        blocks: true,
+        spotBlocks: true,
+        toolOutputs: true,
+        handbookHtml: true,
+        handbookVersion: true,
+        handbookGeneratedAt: true,
+        previewPath: true,
+      },
+    });
+  }
 
   if (!state) return null;
 
@@ -513,6 +710,13 @@ export async function getSessionStateSnapshot(
     spotBlocks: state.spotBlocks,
     toolOutputs: state.toolOutputs,
     handbookHtml: state.handbookHtml,
+    handbookLifecycle: state.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT,
+    handbookPublishedAt: state.handbookPublishedAt
+      ? state.handbookPublishedAt.toISOString()
+      : null,
+    handbookArchivedAt: state.handbookArchivedAt
+      ? state.handbookArchivedAt.toISOString()
+      : null,
     handbookVersion: state.handbookVersion,
     handbookGeneratedAt: state.handbookGeneratedAt
       ? state.handbookGeneratedAt.toISOString()
@@ -530,6 +734,9 @@ export async function upsertSessionState(
     spotBlocks?: unknown;
     toolOutputs?: unknown;
     handbookHtml?: string | null;
+    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookPublishedAt?: Date | null;
+    handbookArchivedAt?: Date | null;
     incrementHandbookVersion?: boolean;
     previewPath?: string | null;
   },
@@ -544,6 +751,27 @@ export async function upsertSessionState(
   });
   if (!ownedSession) return;
 
+  const lifecycleCreateData =
+    state.handbookLifecycle === undefined
+      ? {}
+      : ({
+          handbookLifecycle: state.handbookLifecycle,
+          handbookPublishedAt:
+            state.handbookPublishedAt === undefined ? null : state.handbookPublishedAt,
+          handbookArchivedAt:
+            state.handbookArchivedAt === undefined ? null : state.handbookArchivedAt,
+        } satisfies Record<string, unknown>);
+  const lifecycleUpdateData =
+    state.handbookLifecycle === undefined
+      ? {}
+      : ({
+          handbookLifecycle: state.handbookLifecycle,
+          handbookPublishedAt:
+            state.handbookPublishedAt === undefined ? undefined : state.handbookPublishedAt,
+          handbookArchivedAt:
+            state.handbookArchivedAt === undefined ? undefined : state.handbookArchivedAt,
+        } satisfies Record<string, unknown>);
+
   await db.sessionState.upsert({
     where: { sessionId },
     create: {
@@ -554,6 +782,7 @@ export async function upsertSessionState(
       toolOutputs: toNullableInputJson(state.toolOutputs),
       handbookHtml:
         state.handbookHtml === undefined ? null : state.handbookHtml,
+      ...lifecycleCreateData,
       handbookVersion: state.incrementHandbookVersion ? 1 : 0,
       handbookGeneratedAt: handbookGeneratedAt ?? null,
       previewPath:
@@ -566,6 +795,7 @@ export async function upsertSessionState(
       toolOutputs: toNullableInputJson(state.toolOutputs),
       handbookHtml:
         state.handbookHtml === undefined ? undefined : state.handbookHtml,
+      ...lifecycleUpdateData,
       handbookVersion: state.incrementHandbookVersion
         ? { increment: 1 }
         : undefined,
@@ -586,6 +816,9 @@ export async function patchSessionState(
     spotBlocks?: unknown;
     toolOutputs?: unknown;
     handbookHtml?: string | null;
+    handbookLifecycle?: HandbookLifecycleStatus;
+    handbookPublishedAt?: Date | null;
+    handbookArchivedAt?: Date | null;
     incrementHandbookVersion?: boolean;
     previewPath?: string | null;
   },
@@ -608,6 +841,107 @@ export async function patchSessionState(
   });
 }
 
+export class HandbookLifecycleError extends Error {
+  code: 'MISSING_HTML_FOR_PUBLIC';
+
+  constructor(message: string, code: 'MISSING_HTML_FOR_PUBLIC') {
+    super(message);
+    this.code = code;
+  }
+}
+
+export async function setSessionHandbookLifecycle(
+  sessionId: string,
+  userId: string,
+  lifecycle: HandbookLifecycleStatus,
+): Promise<{
+  handbookLifecycle: HandbookLifecycleStatus;
+  handbookPublishedAt: string | null;
+  handbookArchivedAt: string | null;
+} | null> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      userId,
+    },
+    select: {
+      id: true,
+      state: {
+        select: {
+          handbookHtml: true,
+          handbookLifecycle: true,
+          handbookPublishedAt: true,
+          handbookArchivedAt: true,
+        },
+      },
+    },
+  });
+
+  if (!session) return null;
+
+  const existingLifecycle =
+    session.state?.handbookLifecycle ?? HandbookLifecycleStatus.DRAFT;
+  if (existingLifecycle === lifecycle) {
+    return {
+      handbookLifecycle: existingLifecycle,
+      handbookPublishedAt: session.state?.handbookPublishedAt
+        ? session.state.handbookPublishedAt.toISOString()
+        : null,
+      handbookArchivedAt: session.state?.handbookArchivedAt
+        ? session.state.handbookArchivedAt.toISOString()
+        : null,
+    };
+  }
+
+  if (lifecycle === HandbookLifecycleStatus.PUBLIC) {
+    const html = session.state?.handbookHtml;
+    if (!html || !html.trim()) {
+      throw new HandbookLifecycleError(
+        'Cannot set handbook lifecycle to PUBLIC before handbook HTML is generated.',
+        'MISSING_HTML_FOR_PUBLIC',
+      );
+    }
+  }
+
+  const now = new Date();
+  await db.sessionState.upsert({
+    where: { sessionId },
+    create: {
+      sessionId,
+      handbookLifecycle: lifecycle,
+      handbookPublishedAt: lifecycle === HandbookLifecycleStatus.PUBLIC ? now : null,
+      handbookArchivedAt: lifecycle === HandbookLifecycleStatus.ARCHIVED ? now : null,
+    },
+    update: {
+      handbookLifecycle: lifecycle,
+      handbookPublishedAt:
+        lifecycle === HandbookLifecycleStatus.PUBLIC ? now : undefined,
+      handbookArchivedAt:
+        lifecycle === HandbookLifecycleStatus.ARCHIVED ? now : undefined,
+    },
+  });
+
+  const updated = await db.sessionState.findUnique({
+    where: { sessionId },
+    select: {
+      handbookLifecycle: true,
+      handbookPublishedAt: true,
+      handbookArchivedAt: true,
+    },
+  });
+  if (!updated) return null;
+
+  return {
+    handbookLifecycle: updated.handbookLifecycle,
+    handbookPublishedAt: updated.handbookPublishedAt
+      ? updated.handbookPublishedAt.toISOString()
+      : null,
+    handbookArchivedAt: updated.handbookArchivedAt
+      ? updated.handbookArchivedAt.toISOString()
+      : null,
+  };
+}
+
 export async function getSessionHandbook(
   sessionId: string,
   userId: string,
@@ -620,6 +954,42 @@ export async function getSessionHandbook(
     where: {
       id: sessionId,
       userId,
+    },
+    select: {
+      title: true,
+      state: {
+        select: {
+          handbookHtml: true,
+          handbookVersion: true,
+        },
+      },
+    },
+  });
+
+  if (!session?.state?.handbookHtml) return null;
+
+  return {
+    title: session.title,
+    html: session.state.handbookHtml,
+    handbookVersion: session.state.handbookVersion,
+  };
+}
+
+export async function getPublicSessionHandbook(
+  sessionId: string,
+): Promise<{
+  title: string;
+  html: string;
+  handbookVersion: number;
+} | null> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
+      state: {
+        is: {
+          handbookLifecycle: HandbookLifecycleStatus.PUBLIC,
+        },
+      },
     },
     select: {
       title: true,

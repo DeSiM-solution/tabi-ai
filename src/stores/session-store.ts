@@ -194,11 +194,15 @@ const useSessionProcessStore = create<SessionStoreState>(set => ({
           return;
         }
 
-        steps[toolName] = {
-          status: 'loading',
-          error: null,
-          output: steps[toolName].output,
-        };
+        // Non-final tool states from an aborted request can remain in message history.
+        // Only treat them as actively loading while the current request is still running.
+        if (requestLoading) {
+          steps[toolName] = {
+            status: 'loading',
+            error: null,
+            output: steps[toolName].output,
+          };
+        }
       });
     }
 

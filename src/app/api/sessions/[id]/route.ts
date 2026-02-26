@@ -94,7 +94,10 @@ export async function DELETE(
 
   try {
     const userId = getRequestUserId(req);
-    await removeSession(sessionId, userId);
+    const removed = await removeSession(sessionId, userId);
+    if (!removed) {
+      return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[sessions_api] delete-failed', { sessionId, error });

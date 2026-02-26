@@ -33,8 +33,8 @@ import { UserCenterPanel } from '@/components/user-center-panel';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'youtu.be']);
 const EXAMPLE_VIDEOS = [
-  { label: 'Tokyo Coffee Tour', id: 'dQw4w9WgXcQ' },
-  { label: 'Osaka Street Food', id: 'xvFZjo5PgG0' },
+  { label: '48 Hours in Hiroshima and Miyajima', id: 'ZAmZgQlx_u4' },
+  { label: 'How to Spend 4 Days in Osaka', id: 'hWXRiDOFFT0' },
 ] as const;
 
 function getStyleLabel(styleId: HandbookStyleId): string {

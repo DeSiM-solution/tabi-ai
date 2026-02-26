@@ -161,7 +161,7 @@
 - `APIFY_API_KEY`
 
 ### 7.2 推荐环境变量
-- `UNSPLASH_ACCESS_KEY`（不配会退化到 `source.unsplash.com`）
+- `UNSPLASH_ACCESS_KEY`（用于稳定拉取真实图库；不可用时 `search_image` 会自动回退到 Imagen 生成，避免裂图）
 
 ### 7.3 常用命令
 ```bash

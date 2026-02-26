@@ -79,7 +79,7 @@ export function saveSessionItems(items: SessionItem[]): void {
 export function createSessionId(): string {
   const ts = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 8);
-  return `session-${ts}-${rand}`;
+  return `${ts}-${rand}`;
 }
 
 export function toSessionTitle(input: string): string {

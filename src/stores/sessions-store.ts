@@ -2,11 +2,16 @@
 
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import {
+  DEFAULT_HANDBOOK_LIFECYCLE,
+  type HandbookLifecycle,
+} from '@/lib/handbook-lifecycle';
 
 export interface SessionSummary {
   id: string;
   title: string;
   description?: string | null;
+  handbookLifecycle?: HandbookLifecycle;
   meta: string;
   isError?: boolean;
   status?: 'idle' | 'loading' | 'error' | 'completed' | 'cancelled';
@@ -46,6 +51,7 @@ type SessionsStoreState =
 const SESSIONS_REFRESH_TTL_MS = 30_000;
 let hydrateSessionsInFlight: Promise<void> | null = null;
 const updateSessionInFlightByKey = new Map<string, Promise<void>>();
+const createSessionInFlightById = new Map<string, Promise<void>>();
 
 const initialState: SessionsState = {
   sessions: [],
@@ -60,6 +66,7 @@ function normalizeAndSortSessions(
 ): SessionSummary[] {
   const normalized = sessions.map(session => ({
     ...session,
+    handbookLifecycle: session.handbookLifecycle ?? DEFAULT_HANDBOOK_LIFECYCLE,
     startedAt:
       typeof session.startedAt === 'number' ? session.startedAt : session.startedAt ?? null,
     createdAt: session.createdAt ?? fallbackNow,
@@ -160,6 +167,9 @@ async function removeSessionOnApi(sessionId: string): Promise<void> {
   const response = await fetch(`/api/sessions/${sessionId}`, {
     method: 'DELETE',
   });
+  if (response.status === 404) {
+    return;
+  }
   if (!response.ok) {
     throw new Error(`Failed to remove session (${response.status})`);
   }
@@ -183,6 +193,8 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
     set(previous => {
       const nextSession: SessionSummary = {
         ...session,
+        handbookLifecycle:
+          session.handbookLifecycle ?? DEFAULT_HANDBOOK_LIFECYCLE,
         startedAt:
           typeof session.startedAt === 'number' ? session.startedAt : session.startedAt ?? null,
         createdAt: session.createdAt ?? now,
@@ -195,7 +207,21 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
       };
     });
 
-    void createSessionOnApi(session).catch(error => {
+    const pending = createSessionInFlightById.get(session.id);
+    if (pending) {
+      return;
+    }
+
+    const request = createSessionOnApi(session);
+    const wrapped = request.finally(() => {
+      const active = createSessionInFlightById.get(session.id);
+      if (active === wrapped) {
+        createSessionInFlightById.delete(session.id);
+      }
+    });
+    createSessionInFlightById.set(session.id, wrapped);
+
+    void wrapped.catch(error => {
       const message =
         error instanceof Error ? error.message : 'Failed to create session';
       set(previous => ({
@@ -230,6 +256,7 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
           nextSession.status !== session.status ||
           nextSession.lastStep !== session.lastStep ||
           nextSession.startedAt !== session.startedAt ||
+          nextSession.handbookLifecycle !== session.handbookLifecycle ||
           nextSession.createdAt !== session.createdAt;
 
         if (hasDiff) {
@@ -265,20 +292,46 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
   },
 
   removeSession(sessionId) {
+    const removedSession = get().sessions.find(session => session.id === sessionId) ?? null;
     set(previous => ({
       ...previous,
       sessions: previous.sessions.filter(session => session.id !== sessionId),
     }));
 
-    void removeSessionOnApi(sessionId)
-      .then(() => get().hydrateFromServer())
+    const pendingCreate = createSessionInFlightById.get(sessionId);
+
+    void (async () => {
+      if (pendingCreate) {
+        try {
+          await pendingCreate;
+        } catch {
+          // Creation already failed, continue deletion to keep server state consistent.
+        }
+      }
+      await removeSessionOnApi(sessionId);
+    })()
       .catch(error => {
         const message =
           error instanceof Error ? error.message : 'Failed to delete session';
-        set(previous => ({
-          ...previous,
-          error: message,
-        }));
+        set(previous => {
+          if (!removedSession) {
+            return {
+              ...previous,
+              error: message,
+            };
+          }
+
+          const alreadyPresent = previous.sessions.some(session => session.id === sessionId);
+          const restored = alreadyPresent
+            ? previous.sessions
+            : [removedSession, ...previous.sessions];
+
+          return {
+            ...previous,
+            sessions: normalizeAndSortSessions(restored, Date.now()),
+            error: message,
+          };
+        });
       });
   },
 

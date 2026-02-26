@@ -5,7 +5,7 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LuLoader, LuSendHorizontal } from 'react-icons/lu';
+import { LuArrowRight, LuCheck, LuLoader, LuSendHorizontal } from 'react-icons/lu';
 import { BlockEditorWorkspace } from './_components/block-editor-workspace';
 import { MessageContent } from './_components/message-content';
 import {
@@ -37,6 +37,7 @@ import {
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
 import { formatSessionDateTime } from '@/lib/session-time';
 import {
+  HANDBOOK_STYLE_OPTIONS,
   getHandbookStyleInstruction,
   getHandbookStyleLabel,
   normalizeHandbookStyle,
@@ -47,6 +48,97 @@ const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
   'build_travel_blocks',
   'resolve_spot_coordinates',
 ]);
+function toStyleSelection(value: HandbookStyleId | null | undefined): HandbookStyleId {
+  return value ?? 'minimal-tokyo';
+}
+
+function getStyleSelectionLabel(styleId: HandbookStyleId): string {
+  if (styleId === 'minimal-tokyo') return 'Minimal\nTokyo';
+  if (styleId === 'warm-analog') return 'Warm\nAnalog';
+  if (styleId === 'brutalist') return 'Brutalist';
+  if (styleId === 'dreamy-soft') return 'Dreamy\nSoft';
+  return 'Let Tabi\ndecide';
+}
+
+function renderStyleSelectionPreview(
+  preset: HandbookStyleId,
+  selected: boolean,
+) {
+  const badge = selected ? (
+    <span className="absolute right-[6px] top-[6px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent-primary text-text-inverse">
+      <LuCheck className="h-3 w-3" />
+    </span>
+  ) : null;
+
+  if (preset === 'minimal-tokyo') {
+    return (
+      <span className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7] bg-bg-elevated">
+        <span className="absolute left-[5px] top-[5px] grid h-[54px] w-[54px] grid-cols-5 gap-[6px]">
+          {Array.from({ length: 25 }, (_, index) => (
+            <span
+              key={`dot-${index}`}
+              className="h-[6px] w-[6px] rounded-full bg-[#C4C4C4]"
+            />
+          ))}
+        </span>
+        {badge}
+      </span>
+    );
+  }
+
+  if (preset === 'brutalist') {
+    return (
+      <span className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-zinc-900">
+        <span className="block h-[28px] w-[28px] rounded-[6px] bg-rose-500" />
+        {badge}
+      </span>
+    );
+  }
+
+  if (preset === 'dreamy-soft') {
+    return (
+      <span
+        className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
+        style={{
+          background:
+            'linear-gradient(145deg, rgb(253, 244, 255) 0%, rgb(243, 232, 255) 40%, rgb(233, 213, 255) 100%)',
+        }}
+      >
+        {badge}
+      </span>
+    );
+  }
+
+  if (preset === 'let-tabi-decide') {
+    return (
+      <span
+        className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-gradient-to-br from-[var(--tabi-bg-secondary)] via-[var(--tabi-bg-primary)] to-[var(--tabi-border-light)]"
+        style={{
+          ['--tabi-bg-secondary' as string]: '#F5F3EF',
+          ['--tabi-bg-primary' as string]: '#FAFAF8',
+          ['--tabi-border-light' as string]: '#E8E6E3',
+        }}
+      >
+        <span className="block text-[20px] leading-none font-semibold text-[#71717A]">
+          旅
+        </span>
+        {badge}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
+      style={{
+        background:
+          'linear-gradient(145deg, rgb(254, 247, 230) 0%, rgb(245, 230, 200) 40%, rgb(232, 212, 168) 100%)',
+      }}
+    >
+      {badge}
+    </span>
+  );
+}
 
 type SessionHydrationPayload = {
   session?: {
@@ -217,6 +309,19 @@ function getPersistedHandbookStyle(context: unknown): HandbookStyleId | null {
   return nestedStyle;
 }
 
+function countGenerateHandbookOutputs(messages: UIMessage[]): number {
+  let count = 0;
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (!isToolPart(part)) continue;
+      if (part.type !== 'tool-generate_handbook_html') continue;
+      if (part.state !== 'output-available') continue;
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function MainContentLoadingState({ label }: { label: string }) {
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-primary px-6 text-center">
@@ -243,14 +348,9 @@ export default function Chat() {
   const searchParams = useSearchParams();
   const initialInput = searchParams.get('initial') ?? '';
   const initialStyle = searchParams.get('style');
-  const hasSessionInList = useSessionsStore(state =>
-    state.sessions.some(session => session.id === sessionId),
-  );
   const currentSessionSummary = useSessionsStore(state =>
     state.sessions.find(session => session.id === sessionId) ?? null,
   );
-  const sessionsLoading = useSessionsStore(state => state.loading);
-  const sessionsLastFetched = useSessionsStore(state => state.lastFetched);
   const processState = useSessionStore(state => ({
     sessionId: state.sessionId,
     loading: state.loading,
@@ -278,10 +378,17 @@ export default function Chat() {
   const [handbookStyle, setHandbookStyle] = useState<HandbookStyleId | null>(
     () => normalizeHandbookStyle(initialStyle),
   );
+  const [isStyleConfirmOpen, setIsStyleConfirmOpen] = useState(false);
+  const [pendingStyleSession, setPendingStyleSession] =
+    useState<EditorSession | null>(null);
+  const [selectedStyleOption, setSelectedStyleOption] =
+    useState<HandbookStyleId>('minimal-tokyo');
+  const [setAsSessionDefault, setSetAsSessionDefault] = useState(true);
 
   const didSendInitialInputRef = useRef(false);
   const loggedToolEventsRef = useRef<Set<string>>(new Set());
   const autoOpenedEditableSourceRef = useRef<Set<string>>(new Set());
+  const pendingToolbarGenerationRef = useRef<{ beforeCount: number } | null>(null);
   const hydratedSessionRef = useRef<string | null>(null);
   const hydratingSessionRef = useRef<string | null>(null);
   const activeHydrationSessionRef = useRef<string | null>(null);
@@ -385,24 +492,6 @@ export default function Chat() {
     if (!styleFromQuery) return;
     setHandbookStyle(styleFromQuery);
   }, [initialStyle, sessionId]);
-
-  useEffect(() => {
-    if (!sessionId || hasSessionInList) return;
-    if (sessionsLastFetched === null || sessionsLoading) return;
-    const createdAt = Date.now();
-
-    sessionsActions.addSession({
-      id: sessionId,
-      title: 'Untitled Guide',
-      meta: formatSessionDateTime(createdAt),
-      isError: false,
-      status: 'idle',
-      lastStep: null,
-      startedAt: null,
-      createdAt,
-      updatedAt: createdAt,
-    });
-  }, [hasSessionInList, sessionId, sessionsLastFetched, sessionsLoading]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -678,8 +767,15 @@ export default function Chat() {
     window.URL.revokeObjectURL(url);
   }, []);
 
-  const generateHandbookFromEditor = useCallback((session: EditorSession) => {
+  const generateHandbookFromEditor = useCallback((
+    session: EditorSession,
+    options?: {
+      forcedStyle?: HandbookStyleId;
+      persistStyleAsDefault?: boolean;
+    },
+  ) => {
     if (!sessionId) return;
+    if (isBusy) return;
     const nextOutput = applyEditorSession(session);
     const blocks = Array.isArray(nextOutput.blocks) ? nextOutput.blocks : [];
     if (blocks.length === 0) {
@@ -687,7 +783,10 @@ export default function Chat() {
       return;
     }
 
-    const styleId = handbookStyle ?? 'let-tabi-decide';
+    const styleId = options?.forcedStyle ?? handbookStyle ?? 'let-tabi-decide';
+    if (options?.persistStyleAsDefault) {
+      setHandbookStyle(styleId);
+    }
     const styleLabel = getHandbookStyleLabel(styleId);
     const styleInstruction = getHandbookStyleInstruction(styleId);
 
@@ -713,9 +812,9 @@ export default function Chat() {
 
     const prompt = [
       'Generate handbook HTML from edited blocks.',
-      'Call exactly one image tool first: search_image or generate_image.',
-      'Prefer search_image for real landmarks, cities, food, and architecture.',
-      'Use generate_image when stock photos are not suitable.',
+      'If runtime already has prepared images from a completed search_image or generate_image step, reuse them and do not call an image tool again.',
+      'If no prepared images are available, call exactly one image tool first: search_image or generate_image.',
+      'Prefer search_image for real landmarks, cities, food, and architecture; use generate_image when stock photos are not suitable.',
       'After image tool finishes, call generate_handbook_html exactly once using HANDBOOK_INPUT_JSON as tool input.',
       'Do not call parse_youtube_input, crawl_youtube_videos, build_travel_blocks, or resolve_spot_coordinates.',
       `Use handbook style: ${styleLabel}.`,
@@ -725,8 +824,41 @@ export default function Chat() {
       'HANDBOOK_INPUT_JSON:',
       JSON.stringify(payload),
     ].join('\n');
+    pendingToolbarGenerationRef.current = {
+      beforeCount: countGenerateHandbookOutputs(messages),
+    };
     sendMessage({ text: prompt });
-  }, [handbookStyle, sendMessage, sessionId]);
+  }, [handbookStyle, isBusy, messages, sendMessage, sessionId]);
+
+  const openStyleConfirmModal = useCallback((session: EditorSession) => {
+    if (!sessionId || isBusy) return;
+    setPendingStyleSession(session);
+    setSelectedStyleOption(toStyleSelection(handbookStyle));
+    setSetAsSessionDefault(true);
+    setIsStyleConfirmOpen(true);
+  }, [handbookStyle, isBusy, sessionId]);
+
+  const closeStyleConfirmModal = useCallback(() => {
+    setIsStyleConfirmOpen(false);
+    setPendingStyleSession(null);
+  }, []);
+
+  const submitStyleConfirmGenerate = useCallback(() => {
+    if (!pendingStyleSession) return;
+    const targetSession = pendingStyleSession;
+    const targetStyle = selectedStyleOption;
+    setIsStyleConfirmOpen(false);
+    setPendingStyleSession(null);
+    generateHandbookFromEditor(targetSession, {
+      forcedStyle: targetStyle,
+      persistStyleAsDefault: setAsSessionDefault,
+    });
+  }, [
+    generateHandbookFromEditor,
+    pendingStyleSession,
+    selectedStyleOption,
+    setAsSessionDefault,
+  ]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -747,7 +879,7 @@ export default function Chat() {
       }
 
       if (detail.action === 'generate') {
-        generateHandbookFromEditor(editorSession);
+        openStyleConfirmModal(editorSession);
       }
     };
 
@@ -765,10 +897,53 @@ export default function Chat() {
   }, [
     editorSession,
     exportEditorCsv,
-    generateHandbookFromEditor,
+    openStyleConfirmModal,
     saveEditor,
     sessionId,
   ]);
+
+  useEffect(() => {
+    if (!isStyleConfirmOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      closeStyleConfirmModal();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeStyleConfirmModal, isStyleConfirmOpen]);
+
+  useEffect(() => {
+    if (!sessionId || !isStyleConfirmOpen) return;
+    if (pendingStyleSession) return;
+    setIsStyleConfirmOpen(false);
+  }, [isStyleConfirmOpen, pendingStyleSession, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const pending = pendingToolbarGenerationRef.current;
+    if (!pending) return;
+    if (isBusy) return;
+
+    pendingToolbarGenerationRef.current = null;
+    const afterCount = countGenerateHandbookOutputs(messages);
+    const hasNewHandbookOutput = afterCount > pending.beforeCount;
+    const hasRenderableHandbook = Boolean(handbookHtml || handbookPreviewUrl);
+
+    if (hasNewHandbookOutput || hasRenderableHandbook) {
+      return;
+    }
+
+    if (handbookStatus === 'generating') {
+      sessionEditorActions.setHandbookStatus(sessionId, 'error');
+      sessionEditorActions.setHandbookError(
+        sessionId,
+        'Generation did not reach generate_handbook_html. Please click Generate again.',
+      );
+      sessionEditorActions.setCenterViewMode(sessionId, 'html');
+    }
+  }, [handbookHtml, handbookPreviewUrl, handbookStatus, isBusy, messages, sessionId]);
 
   useEffect(() => {
     for (const message of messages) {
@@ -1133,6 +1308,100 @@ export default function Chat() {
 
               {(isSessionHydrating || showBlocksLoadingState) && (
                 <MainContentLoadingState label={centerLoadingLabel} />
+              )}
+
+              {isStyleConfirmOpen && showBlocksView && pendingStyleSession && (
+                <div
+                  className="absolute inset-0 z-40 flex items-center justify-center bg-[#2D2A26]/38 px-6 backdrop-blur-[2px]"
+                  onClick={closeStyleConfirmModal}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Choose style for this generation"
+                    className="w-full max-w-[520px] rounded-[20px] border border-border-light bg-bg-elevated p-6 shadow-[0_16px_42px_rgba(26,23,20,0.14)]"
+                    onClick={event => event.stopPropagation()}
+                  >
+                    <div className="space-y-1.5">
+                      <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+                        Before Generate
+                      </p>
+                      <h2 className="text-[28px] font-bold tracking-[-0.02em] text-text-primary">
+                        Choose your guide&apos;s aesthetic
+                      </h2>
+                      <p className="text-[13px] leading-[1.45] text-text-secondary">
+                        Match your channel&apos;s visual identity for this run.
+                      </p>
+                    </div>
+
+                    <p className="mt-6 text-[15px] font-semibold text-text-primary">
+                      Aesthetic
+                    </p>
+                    <div className="mt-3 flex flex-nowrap items-start justify-between gap-1">
+                      {HANDBOOK_STYLE_OPTIONS.map(option => {
+                        const selected = selectedStyleOption === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setSelectedStyleOption(option.id)}
+                            aria-pressed={selected}
+                            className="group relative w-[80px] p-0 text-center transition"
+                          >
+                            {renderStyleSelectionPreview(option.id, selected)}
+                            <span
+                              className={`mt-2 block whitespace-pre-line text-[13px] font-medium leading-[1.25] ${
+                                selected
+                                  ? 'text-text-primary'
+                                  : 'text-text-secondary'
+                              }`}
+                            >
+                              {getStyleSelectionLabel(option.id)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSetAsSessionDefault(value => !value)}
+                      className="mt-5 inline-flex items-center gap-2 rounded-[8px] py-1 text-left"
+                    >
+                      <span
+                        className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition ${
+                          setAsSessionDefault
+                            ? 'bg-accent-primary text-text-inverse'
+                            : 'border border-border-default bg-bg-elevated text-transparent'
+                        }`}
+                      >
+                        <LuCheck className="h-3 w-3" />
+                      </span>
+                      <span className="text-[13px] font-medium text-text-secondary">
+                        Set as session default
+                      </span>
+                    </button>
+
+                    <div className="mt-6 flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={closeStyleConfirmModal}
+                        className="inline-flex h-11 items-center justify-center rounded-[12px] border border-border-light bg-bg-secondary px-[18px] text-[14px] font-semibold text-text-secondary transition hover:bg-bg-elevated"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitStyleConfirmGenerate}
+                        disabled={isBusy}
+                        className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[14px] bg-gradient-to-r from-[#F97066] to-[#FB923C] px-5 text-[14px] font-semibold text-text-inverse transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span>Generate</span>
+                        <LuArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>,
             editorHost,

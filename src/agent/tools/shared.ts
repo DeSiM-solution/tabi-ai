@@ -546,24 +546,6 @@ export function validateHandbookImagePlan(
   return errors;
 }
 
-function createUnsplashSourceFallback(query: string): {
-  image_url: string;
-  source_page: string | null;
-  credit: string | null;
-  width: number | null;
-  height: number | null;
-} {
-  const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-  const slug = normalizedQuery.replace(/\s+/g, '-');
-  return {
-    image_url: `https://source.unsplash.com/featured/1600x900/?${encodeURIComponent(normalizedQuery)}`,
-    source_page: `https://unsplash.com/s/photos/${encodeURIComponent(slug)}`,
-    credit: null,
-    width: 1600,
-    height: 900,
-  };
-}
-
 function buildUnsplashQueryCandidates(query: string): string[] {
   const normalized = query.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
@@ -628,11 +610,10 @@ export async function fetchUnsplashPhoto(
     throw new Error('Unsplash query cannot be empty.');
   }
 
-  const sourceFallback = createUnsplashSourceFallback(normalizedQuery);
   const unsplashAccessKey = process.env.UNSPLASH_ACCESS_KEY?.trim();
 
   if (!unsplashAccessKey) {
-    return sourceFallback;
+    throw new Error('UNSPLASH_ACCESS_KEY is not configured.');
   }
 
   const queryCandidates = buildUnsplashQueryCandidates(normalizedQuery);
@@ -656,11 +637,11 @@ export async function fetchUnsplashPhoto(
         if (response.status === 403 || response.status === 429) {
           const body = await response.text();
           lastError = `Unsplash search failed (${response.status}) for "${candidate}": ${body}`;
-          console.warn('[search_image] unsplash-rate-limit-fallback', {
+          console.warn('[search_image] unsplash-rate-limit', {
             candidate,
             status: response.status,
           });
-          return createUnsplashSourceFallback(candidate);
+          throw new Error(lastError);
         }
 
         if (!response.ok) {
@@ -683,7 +664,9 @@ export async function fetchUnsplashPhoto(
             user?: { name?: string };
           }>;
         };
-        const first = payload.results?.[0];
+        const first = payload.results?.find(
+          result => typeof result.urls?.regular === 'string' || typeof result.urls?.full === 'string',
+        );
 
         if (!first?.urls?.regular && !first?.urls?.full) {
           lastError = `Unsplash returned no image for query "${candidate}"`;
@@ -701,7 +684,11 @@ export async function fetchUnsplashPhoto(
         if (isAbortError(error)) {
           throw error;
         }
-        lastError = `Unsplash request failed for "${candidate}": ${toErrorMessage(error)}`;
+        const message = toErrorMessage(error);
+        if (/Unsplash search failed \((?:403|429)\)/.test(message)) {
+          throw new Error(message);
+        }
+        lastError = `Unsplash request failed for "${candidate}": ${message}`;
         if (attempt === 0) {
           await sleepWithAbort(300, requestSignal);
           continue;
@@ -711,11 +698,13 @@ export async function fetchUnsplashPhoto(
     }
   }
 
-  console.warn('[search_image] unsplash-fallback-source', {
+  console.warn('[search_image] unsplash-search-exhausted', {
     query: normalizedQuery,
     lastError,
   });
-  return sourceFallback;
+  throw new Error(
+    lastError ?? `Unsplash returned no usable image for query "${normalizedQuery}"`,
+  );
 }
 
 function getHandbookImageModelCandidates(): string[] {

@@ -32,6 +32,54 @@ const TOOL_PRIORITY: PersistedToolName[] = [
   'generate_image',
   'resolve_spot_coordinates',
 ];
+const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
+
+function isToolMessagePart(part: UIMessage['parts'][number]): part is UIMessage['parts'][number] & {
+  type: `tool-${string}`;
+  state?: string;
+} {
+  return 'type' in part && typeof part.type === 'string' && part.type.startsWith('tool-');
+}
+
+function sanitizeIncomingMessages(messages: UIMessage[]): {
+  messages: UIMessage[];
+  removedToolParts: number;
+  removedMessages: number;
+} {
+  const sanitized: UIMessage[] = [];
+  let removedToolParts = 0;
+  let removedMessages = 0;
+
+  for (const message of messages) {
+    const filteredParts = message.parts.filter(part => {
+      if (!isToolMessagePart(part)) return true;
+      if (part.state === 'output-available' || part.state === 'output-error') return true;
+      removedToolParts += 1;
+      return false;
+    });
+
+    if (filteredParts.length === 0) {
+      removedMessages += 1;
+      continue;
+    }
+
+    if (filteredParts.length === message.parts.length) {
+      sanitized.push(message);
+      continue;
+    }
+
+    sanitized.push({
+      ...message,
+      parts: filteredParts,
+    });
+  }
+
+  return {
+    messages: sanitized,
+    removedToolParts,
+    removedMessages,
+  };
+}
 
 function hasRenderableHtml(runtime: AgentRuntimeState): boolean {
   return typeof runtime.latestHandbookHtml === 'string' && runtime.latestHandbookHtml.trim().length > 0;
@@ -72,7 +120,9 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     messages?: UIMessage[];
     sessionId?: string;
   };
-  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const rawMessages = Array.isArray(payload.messages) ? payload.messages : [];
+  const sanitizedInput = sanitizeIncomingMessages(rawMessages);
+  const messages = sanitizedInput.messages;
   const sessionId =
     typeof payload.sessionId === 'string' && payload.sessionId.trim()
       ? payload.sessionId.trim()
@@ -86,12 +136,15 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       .map(part => part.text)
       .join(' ')
       .trim() ?? '';
+  const isManualHandbookRequest = latestUserText.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX);
 
   console.log('[chat_api] request-start', {
     requestId,
     userId,
     sessionId,
     messageCount: messages.length,
+    removedToolParts: sanitizedInput.removedToolParts,
+    removedMessages: sanitizedInput.removedMessages,
     latestUserTextPreview: latestUserText.slice(0, 200),
   });
 
@@ -123,11 +176,26 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
 
   const runToolStep = createRunToolStep({ sessionId, userId, runtime });
   const executionAbortSignal: AbortSignal | undefined = undefined;
+  const hasPreparedImages = runtime.latestHandbookImages.length > 0;
+  const hasBlocks = runtime.latestBlocks.length > 0;
+
+  const manualActiveTools = isManualHandbookRequest
+    ? hasPreparedImages && hasBlocks
+      ? (['generate_handbook_html'] as const)
+      : (['search_image', 'generate_image', 'generate_handbook_html'] as const)
+    : undefined;
+  const manualToolChoice = isManualHandbookRequest
+    ? hasPreparedImages && hasBlocks
+      ? ({ type: 'tool', toolName: 'generate_handbook_html' } as const)
+      : ('required' as const)
+    : undefined;
 
   const streamOptions = {
     maxOutputTokens: chatTask.policy.maxOutputTokens,
     system: ORCHESTRATION_SYSTEM_PROMPT,
     stopWhen: stepCountIs(9),
+    activeTools: manualActiveTools,
+    toolChoice: manualToolChoice,
     messages: modelMessages,
     tools: buildAgentTools({
       req,
@@ -138,6 +206,16 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       runToolStep,
     }),
   };
+
+  if (isManualHandbookRequest) {
+    console.log('[chat_api] manual-handbook-tooling', {
+      requestId,
+      hasPreparedImages,
+      hasBlocks,
+      activeTools: manualActiveTools,
+      toolChoice: manualToolChoice,
+    });
+  }
 
   const result = (() => {
     try {
