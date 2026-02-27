@@ -44,7 +44,7 @@ import {
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
-import { formatSessionDateTime } from '@/lib/session-time';
+import { formatSessionDate } from '@/lib/session-time';
 import {
   HANDBOOK_STYLE_OPTIONS,
   getHandbookStyleInstruction,
@@ -782,7 +782,7 @@ export default function Chat() {
       const startedAt =
         currentSessionSummary?.startedAt ?? currentSessionSummary?.createdAt ?? Date.now();
       sessionsActions.updateSession(sessionId, {
-        meta: formatSessionDateTime(startedAt),
+        meta: formatSessionDate(startedAt),
         isError: false,
         status: 'completed',
         lastStep: processState.currentStep,

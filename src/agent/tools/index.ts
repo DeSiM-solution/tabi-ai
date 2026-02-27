@@ -6,11 +6,13 @@ import { createGenerateImageTool } from './generate-image';
 import { createParseYoutubeInputTool } from './parse-youtube-input';
 import { createResolveSpotCoordinatesTool } from './resolve-spot-coordinates';
 import { createSearchImageTool } from './search-image';
+import { createSummarizeSessionDescriptionTool } from './summarize-session-description';
 
 export function buildAgentTools(ctx: AgentToolContext) {
   return {
     parse_youtube_input: createParseYoutubeInputTool(ctx),
     crawl_youtube_videos: createCrawlYoutubeVideosTool(ctx),
+    summarize_description: createSummarizeSessionDescriptionTool(ctx),
     build_travel_blocks: createBuildTravelBlocksTool(ctx),
     resolve_spot_coordinates: createResolveSpotCoordinatesTool(ctx),
     search_image: createSearchImageTool(ctx),

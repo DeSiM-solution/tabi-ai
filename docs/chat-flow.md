@@ -49,10 +49,11 @@
 系统提示中强约束：
 1. `parse_youtube_input`
 2. `crawl_youtube_videos`
-3. `build_travel_blocks`
-4. `resolve_spot_coordinates`（仅 spot 存在时）
-5. `search_image` 或 `generate_image`（二选一，必须先于 HTML）
-6. `generate_handbook_html`
+3. （可选）`summarize_description`
+4. `build_travel_blocks`
+5. `resolve_spot_coordinates`（仅 spot 存在时）
+6. `search_image` 或 `generate_image`（二选一，必须先于 HTML）
+7. `generate_handbook_html`
 
 附加约束：
 - 坐标只能来自地理编码，不允许模型直接编造
@@ -76,7 +77,15 @@
 - 输出：`{ actorId, requestedUrls, count, videos[] }`
 - `videos[]` 会包含 `thumbnailUrl`（优先 Apify 的 `thumbnailUrl`，必要时回退到 `thumbnails[]`）
 
-### 4.3 `build_travel_blocks`
+### 4.3 `summarize_description`（可选）
+- 输入：`{ videoId?: string }`
+- 行为：
+1. 读取 crawl 后缓存的目标视频（description/subtitle）
+2. 调 `runTextTask(task='session_description_summary')` 生成一句会话描述
+3. 自动过滤链接、时间戳和营销噪音，并写回 `Session.description`
+- 输出：`{ status, description, videoId, persisted, model }`
+
+### 4.4 `build_travel_blocks`
 - 输入：`{ videoId?: string }`
 - 行为：
 1. 选定目标视频
@@ -92,7 +101,7 @@
 - 该阶段 location 必须是 `null`
 - `spot_blocks` 必须严格对应 `blocks` 中的 `type=spot`
 
-### 4.4 `resolve_spot_coordinates`
+### 4.5 `resolve_spot_coordinates`
 - 输入：`{}`
 - 行为：
 1. 先调用 `runStructuredTask(task='spot_query_normalization')` 产 geocode query
@@ -101,7 +110,7 @@
 4. 把坐标回填到 `latestBlocks`
 - 输出：`{ spot_queries, resolved_count, unresolved_count, spots_with_coordinates, blocks, spot_blocks }`
 
-### 4.5 `search_image`
+### 4.6 `search_image`
 - 输入：`{ count?: 1..6 }`
 - 行为：
 1. 从 blocks 里挑图像目标（优先 spot/food/...）
@@ -114,7 +123,7 @@
 - 不再使用 `source.unsplash.com/featured` 作为兜底（该链接不稳定且容易裂图）。
 - 当 Unsplash API 不可用、限流或无结果时，会在 `search_image` 内自动回退到 Imagen 生成，`images[].source` 会标记为 `imagen`。
 
-### 4.6 `generate_image`
+### 4.7 `generate_image`
 - 输入：`{ count?: 1..6 }`
 - 行为：
 1. 同样先做图像计划（`handbook_image_query_planning`）
@@ -125,7 +134,7 @@
 4. 保存为 `source='imagen'`
 - 输出：`{ mode, planner_model, generation_models, image_count, images[] }`
 
-### 4.7 `generate_handbook_html`
+### 4.8 `generate_handbook_html`
 - 输入：`{ title?, videoId?, videoUrl?, thumbnailUrl?, blocks, spot_blocks?, images? }`
 - 行为：
 1. 必须已有准备好的 images（来自 input 或前序 image tool）
@@ -159,6 +168,10 @@
 - 主：`gemini-2.5-flash`
 - 备：`gemini-2.5-flash-lite`
 
+- `session_description_summary`
+- 主：`gemini-2.5-flash`
+- 备：`gemini-2.5-flash-lite`
+
 - `handbook_html_generation`
 - 主：`gemini-3-pro-preview`
 - 备：`gemini-2.5-pro`
@@ -178,6 +191,7 @@
 - 成功：`completeSessionStep`
 - 失败：`failSessionStep`
 - 取消：`cancelSessionStep`
+- 例外：`summarize_description` 当前为非阻塞可选 tool，不写 `SessionStep`，仅更新 `Session.description` 与 `toolOutputs`
 
 ### 6.3 快照
 - 每个步骤成功后 `upsertSessionState`：

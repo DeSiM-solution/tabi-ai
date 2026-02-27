@@ -2,6 +2,14 @@ function padTwo(value: number): string {
   return String(value).padStart(2, '0');
 }
 
+export function formatSessionDate(value: Date | number): string {
+  const date = value instanceof Date ? value : new Date(value);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}/${month}/${day}`;
+}
+
 export function formatSessionDateTime(value: Date | number): string {
   const date = value instanceof Date ? value : new Date(value);
   const year = date.getFullYear();

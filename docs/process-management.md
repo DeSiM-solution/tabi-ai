@@ -56,7 +56,7 @@
 - `handbookVersion` / `handbookGeneratedAt`
 - `previewPath`（例如 `/api/guide/<sessionId>`）
 
-### 2.5 工具枚举 `SessionToolName`
+### 2.5 工具枚举 `SessionToolName`（持久化步骤）
 - `parse_youtube_input`
 - `crawl_youtube_videos`
 - `build_travel_blocks`
@@ -65,6 +65,9 @@
 - `generate_image`
 - `generate_handbook_html`
 
+补充：
+- `summarize_description` 是可选的非阻塞 tool，不在 Prisma `SessionToolName` 枚举中。
+
 ## 3. 会话状态机与事件流
 
 ### 3.1 开始执行
@@ -72,6 +75,7 @@
 2. 后端 `ensureSessionRunning`：
 - 会话不存在则创建并置 `RUNNING`
 - 已存在则更新到 `RUNNING`
+- 未显式传入 `description` 时，不会覆盖已有 `Session.description`
 - `startedAt` 仅在空值时补写，保证显示首次开始时间
 3. `upsertChatMessages` 先存一版当前消息
 
@@ -82,6 +86,9 @@
 3. 成功则 `completeSessionStep`，并 `upsertSessionState`
 4. 失败则 `failSessionStep`（同时把 `Session` 标记 `ERROR`）
 5. 如果请求中断（Abort）则 `cancelSessionStep`（同时 `Session` 标记 `CANCELLED`）
+
+例外：
+- `summarize_description` 走非持久化路径，不创建 `SessionStep`，仅更新 `Session.description` + `SessionState.toolOutputs`
 
 ### 3.3 请求结束时
 - `onFinish`：

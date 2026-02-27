@@ -13,7 +13,7 @@ import {
   type SessionToolNameValue,
 } from '@/lib/session-enums';
 import {
-  formatSessionDateTime,
+  formatSessionDate,
   resolveSessionTimeValue,
 } from '@/lib/session-time';
 
@@ -148,7 +148,7 @@ function toSessionSummary(model: SessionSummaryModel): SessionSummaryDto {
         : mappedStatus === 'cancelled'
           ? 'Stopped'
           : sessionTime
-            ? formatSessionDateTime(sessionTime)
+            ? formatSessionDate(sessionTime)
             : '-';
 
   return {
@@ -540,7 +540,8 @@ export async function ensureSessionRunning(input: {
 }): Promise<void> {
   const userId = input.userId;
   const title = input.title?.trim() || null;
-  const description = input.description?.trim() || null;
+  const description =
+    input.description === undefined ? undefined : input.description?.trim() || null;
   const now = new Date();
   await ensureUserExists(userId);
 
@@ -567,7 +568,7 @@ export async function ensureSessionRunning(input: {
           id: input.id,
           userId,
           title: title ?? 'Untitled Guide',
-          description,
+          description: description ?? null,
           status: SESSION_STATUS.RUNNING,
           startedAt: now,
           currentStep: null,

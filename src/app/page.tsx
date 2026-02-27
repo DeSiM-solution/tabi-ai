@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FiArrowRight,
@@ -24,7 +24,7 @@ import {
   type HandbookStyleId,
 } from '@/lib/handbook-style';
 import { createSessionId, toSessionTitle } from '@/lib/session-items';
-import { formatSessionDateTime } from '@/lib/session-time';
+import { formatSessionDate } from '@/lib/session-time';
 import {
   sessionsActions,
   type SessionSummary,
@@ -170,7 +170,11 @@ function extractYoutubeVideoId(url: string): string | null {
 
 export default function Home() {
   const router = useRouter();
-  const authUser = useAuthStore(state => state.user);
+  const authSnapshot = useAuthStore(state => ({
+    user: state.user,
+    loading: state.loading,
+    lastFetched: state.lastFetched,
+  }));
   const { sessionItems, sessionsLoading } = useSessionsStore(state => ({
     sessionItems: state.sessions,
     sessionsLoading: state.loading,
@@ -182,15 +186,30 @@ export default function Home() {
     DEFAULT_HANDBOOK_STYLE,
   );
   const [formError, setFormError] = useState<string | null>(null);
-  const isGuestUser = authUser?.isGuest ?? true;
   useHydrateAuthStore();
   useHydrateSessionsStore();
+  const isAuthHydrating = authSnapshot.loading || authSnapshot.lastFetched === null;
+  const isGuestUser = authSnapshot.user?.isGuest ?? true;
+
+  useEffect(() => {
+    if (isAuthHydrating) return;
+    if (!isGuestUser) return;
+    router.replace('/login');
+  }, [isAuthHydrating, isGuestUser, router]);
 
   const selectedVideoId = useMemo(() => {
     if (!selectedVideoUrl) return null;
     return extractYoutubeVideoId(selectedVideoUrl);
   }, [selectedVideoUrl]);
   const featuredSessionId = sessionItems[0]?.id ?? null;
+
+  if (isAuthHydrating || isGuestUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary text-text-tertiary">
+        <LuLoader className="h-5 w-5 animate-spin" />
+      </div>
+    );
+  }
 
   const addVideoFromInput = () => {
     const normalized = normalizeYoutubeUrl(input);
@@ -234,7 +253,7 @@ export default function Home() {
     const nextItem: SessionSummary = {
       id: createSessionId(),
       title: toSessionTitle(titleSeed),
-      meta: formatSessionDateTime(createdAt),
+      meta: formatSessionDate(createdAt),
       isError: false,
       status: 'idle',
       lastStep: null,

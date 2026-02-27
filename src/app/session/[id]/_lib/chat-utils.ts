@@ -403,6 +403,12 @@ function getNumberField(output: unknown, field: string): number | null {
   return typeof value === 'number' ? value : null;
 }
 
+function getStringField(output: unknown, field: string): string | null {
+  if (!isRecord(output)) return null;
+  const value = output[field];
+  return typeof value === 'string' ? value : null;
+}
+
 function getBlocksFromOutput(output: unknown): SavedBlockOutput[] {
   if (!isRecord(output) || !Array.isArray(output.blocks)) return [];
   return output.blocks.map(toEditableBlockDraft).map(toBlockOutput);
@@ -546,6 +552,14 @@ export function getToolSummary(toolName: string, part: ToolPart, output: unknown
   if (toolName === 'crawl_youtube_videos') {
     const count = getNumberField(output, 'count');
     return `Fetched ${count ?? 0} video record(s)`;
+  }
+
+  if (toolName === 'summarize_description' || toolName === 'summarize_session_description') {
+    const description = getStringField(output, 'description');
+    if (description) {
+      return `Updated session description: ${description}`;
+    }
+    return 'Updated session description';
   }
 
   if (toolName === 'build_travel_blocks') {

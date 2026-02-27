@@ -28,6 +28,8 @@ import {
 const TOOL_ICON_BY_NAME: Record<string, IconType> = {
   parse_youtube_input: LuFileText,
   crawl_youtube_videos: LuCode,
+  summarize_description: LuFileText,
+  summarize_session_description: LuFileText,
   build_travel_blocks: LuFileText,
   resolve_spot_coordinates: LuMapPin,
   search_image: LuImage,

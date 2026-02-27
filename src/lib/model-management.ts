@@ -14,6 +14,7 @@ export type ValidationPolicy =
 export type ModelTask =
   | 'chat_orchestration'
   | 'conversation_compaction'
+  | 'session_description_summary'
   | 'json_compilation_strict'
   | 'spot_query_normalization'
   | 'handbook_image_query_planning'
@@ -130,6 +131,37 @@ const MODEL_TASK_ROUTES: Record<ModelTask, ModelTaskRoute> = {
       ),
       maxRetries: getPositiveIntEnv(
         process.env.CONVERSATION_COMPACTION_MAX_RETRIES,
+        1,
+      ),
+      validationPolicy: 'none',
+      stabilityTier: 'stable',
+    },
+  },
+  session_description_summary: {
+    primary: {
+      provider: 'google',
+      modelId: process.env.SESSION_DESCRIPTION_SUMMARY_MODEL ?? 'gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
+      stabilityTier: 'stable',
+    },
+    fallback: {
+      provider: 'google',
+      modelId:
+        process.env.SESSION_DESCRIPTION_SUMMARY_FALLBACK_MODEL ?? 'gemini-2.5-flash-lite',
+      label: 'Gemini 2.5 Flash Lite',
+      stabilityTier: 'stable',
+    },
+    policy: {
+      maxOutputTokens: getPositiveIntEnv(
+        process.env.SESSION_DESCRIPTION_SUMMARY_MAX_OUTPUT_TOKENS,
+        180,
+      ),
+      timeoutMs: getPositiveIntEnv(
+        process.env.SESSION_DESCRIPTION_SUMMARY_TIMEOUT_MS,
+        20_000,
+      ),
+      maxRetries: getPositiveIntEnv(
+        process.env.SESSION_DESCRIPTION_SUMMARY_MAX_RETRIES,
         1,
       ),
       validationPolicy: 'none',
@@ -333,7 +365,12 @@ export interface StructuredTaskResult<Schema extends z.ZodTypeAny> {
 }
 
 export interface TextTaskOptions {
-  task: Extract<ModelTask, 'handbook_html_generation' | 'conversation_compaction'>;
+  task: Extract<
+    ModelTask,
+    | 'handbook_html_generation'
+    | 'conversation_compaction'
+    | 'session_description_summary'
+  >;
   prompt: string;
   system?: string;
   abortSignal?: AbortSignal;

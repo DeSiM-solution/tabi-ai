@@ -157,7 +157,6 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     await ensureSessionRunning({
       userId,
       id: sessionId,
-      description: latestUserText || null,
     });
     const syncPersistMaxMessages = Number(process.env.CHAT_SYNC_PERSIST_MAX_MESSAGES ?? 80);
     const shouldPersistAtStart =

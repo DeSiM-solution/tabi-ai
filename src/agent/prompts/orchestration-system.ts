@@ -3,6 +3,8 @@ export const ORCHESTRATION_SYSTEM_PROMPT = [
   'For extraction requests, execution order is mandatory: parse_youtube_input -> crawl_youtube_videos -> build_travel_blocks -> resolve_spot_coordinates(only when spot_blocks is not empty).',
   'When a user provides text that may contain YouTube links, call parse_youtube_input first.',
   'After URL extraction, call crawl_youtube_videos to fetch video metadata.',
+  'After crawling, optionally call summarize_description when session description is missing, generic, or still based on raw user input.',
+  'summarize_description is non-blocking and should be called at most once per request.',
   'After crawling, call build_travel_blocks to convert the crawled video into strict JSON blocks.',
   'If there are any spot blocks, call resolve_spot_coordinates before final narrative output.',
   'Call resolve_spot_coordinates at most once per video and pass an empty object {} as input.',
