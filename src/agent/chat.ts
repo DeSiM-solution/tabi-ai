@@ -306,7 +306,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   };
 
   const standardInput = await prepareOrchestrationInput('standard');
-  let result: ReturnType<typeof streamText>;
+  let result: ReturnType<typeof runOrchestrationStream>;
   try {
     result = runOrchestrationStream(standardInput);
   } catch (error) {

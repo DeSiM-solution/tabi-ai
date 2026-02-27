@@ -180,7 +180,7 @@ function estimateMessageChars(messages: UIMessage[]): number {
 
 function toCompactedRecentMessages(messages: UIMessage[], maxMessageChars: number): UIMessage[] {
   const compacted = messages
-    .map(message => {
+    .map((message): UIMessage | null => {
       const summary = summarizeMessage(message, maxMessageChars);
       if (!summary) return null;
       return {
