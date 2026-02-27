@@ -38,6 +38,18 @@ export interface SessionSummaryDto {
   updatedAt: number;
 }
 
+export interface PublicSessionSummaryDto {
+  id: string;
+  title: string;
+  description: string | null;
+  guidePath: string;
+  thumbnailUrl: string | null;
+  handbookVersion: number;
+  handbookPublishedAt: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface SessionDetailDto {
   id: string;
   title: string;
@@ -171,6 +183,66 @@ function normalizeParts(parts: unknown, text: string | null): UIMessage['parts']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function extractThumbnailUrlFromContext(context: unknown): string | null {
+  if (!isRecord(context)) return null;
+
+  const nestedVideo = isRecord(context.video) ? context.video : null;
+  const nestedVideoThumbnail = readNonEmptyString(nestedVideo?.thumbnailUrl);
+  if (nestedVideoThumbnail) return nestedVideoThumbnail;
+
+  const rootThumbnail = readNonEmptyString(context.thumbnailUrl);
+  if (rootThumbnail) return rootThumbnail;
+
+  const rawApifyVideos = Array.isArray(context.apifyVideos)
+    ? context.apifyVideos
+    : Array.isArray(context.apify_videos)
+      ? context.apify_videos
+      : [];
+
+  for (const item of rawApifyVideos) {
+    if (!isRecord(item)) continue;
+    const thumbnailUrl = readNonEmptyString(item.thumbnailUrl);
+    if (thumbnailUrl) return thumbnailUrl;
+  }
+
+  return null;
+}
+
+function extractThumbnailUrlFromToolOutputs(toolOutputs: unknown): string | null {
+  if (!isRecord(toolOutputs)) return null;
+
+  const resolvedOutput = isRecord(toolOutputs.resolve_spot_coordinates)
+    ? toolOutputs.resolve_spot_coordinates
+    : null;
+  const resolvedThumbnail = readNonEmptyString(resolvedOutput?.thumbnailUrl);
+  if (resolvedThumbnail) return resolvedThumbnail;
+
+  const blocksOutput = isRecord(toolOutputs.build_travel_blocks)
+    ? toolOutputs.build_travel_blocks
+    : null;
+  return readNonEmptyString(blocksOutput?.thumbnailUrl);
+}
+
+function extractSessionThumbnailUrl(
+  state: {
+    context: Prisma.JsonValue | null;
+    toolOutputs: Prisma.JsonValue | null;
+  } | null,
+): string | null {
+  if (!state) return null;
+  return (
+    extractThumbnailUrlFromContext(state.context)
+    ?? extractThumbnailUrlFromToolOutputs(state.toolOutputs)
+    ?? null
+  );
 }
 
 function sanitizeStateContextForClient(context: unknown): unknown {
@@ -335,6 +407,63 @@ export async function listSessionSummaries(userId: string): Promise<SessionSumma
         state: null,
       }),
     );
+  }
+}
+
+export async function listPublicSessionSummariesByUserId(
+  userId: string,
+): Promise<PublicSessionSummaryDto[]> {
+  const normalizedUserId = userId.trim().slice(0, 128);
+  if (!normalizedUserId) return [];
+
+  try {
+    const sessions = await db.session.findMany({
+      where: {
+        userId: normalizedUserId,
+        state: {
+          is: {
+            handbookLifecycle: HANDBOOK_LIFECYCLE_STATUS.PUBLIC,
+            handbookHtml: {
+              not: null,
+            },
+          },
+        },
+      },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        createdAt: true,
+        updatedAt: true,
+        state: {
+          select: {
+            context: true,
+            toolOutputs: true,
+            handbookVersion: true,
+            handbookPublishedAt: true,
+          },
+        },
+      },
+    });
+
+    return sessions.map(session => ({
+      id: session.id,
+      title: session.title,
+      description: session.description,
+      guidePath: `/api/guide/${session.id}`,
+      thumbnailUrl: extractSessionThumbnailUrl(session.state),
+      handbookVersion: session.state?.handbookVersion ?? 0,
+      handbookPublishedAt: session.state?.handbookPublishedAt?.toISOString() ?? null,
+      createdAt: session.createdAt.getTime(),
+      updatedAt: session.updatedAt.getTime(),
+    }));
+  } catch (error) {
+    if (isMissingHandbookLifecycleColumnsError(error)) return [];
+    throw error;
   }
 }
 
