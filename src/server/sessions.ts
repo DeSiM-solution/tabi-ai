@@ -44,6 +44,7 @@ export interface PublicSessionSummaryDto {
   description: string | null;
   guidePath: string;
   thumbnailUrl: string | null;
+  blocks: unknown;
   handbookVersion: number;
   handbookPublishedAt: string | null;
   createdAt: number;
@@ -443,6 +444,7 @@ export async function listPublicSessionSummariesByUserId(
           select: {
             context: true,
             toolOutputs: true,
+            blocks: true,
             handbookVersion: true,
             handbookPublishedAt: true,
           },
@@ -456,6 +458,7 @@ export async function listPublicSessionSummariesByUserId(
       description: session.description,
       guidePath: `/api/guide/${session.id}`,
       thumbnailUrl: extractSessionThumbnailUrl(session.state),
+      blocks: session.state?.blocks ?? [],
       handbookVersion: session.state?.handbookVersion ?? 0,
       handbookPublishedAt: session.state?.handbookPublishedAt?.toISOString() ?? null,
       createdAt: session.createdAt.getTime(),
