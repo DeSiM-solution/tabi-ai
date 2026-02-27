@@ -3,26 +3,14 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { LuGithub, LuLoader, LuLogIn } from 'react-icons/lu';
 import { FcGoogle } from 'react-icons/fc';
 import { authActions, useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 
-function normalizeCallbackPath(input: string | null): string {
-  if (!input) return '/';
-  if (!input.startsWith('/')) return '/';
-  return input;
-}
-
-function toRegisterPath(callbackPath: string): string {
-  if (!callbackPath || callbackPath === '/') return '/register';
-  return `/register?callbackUrl=${encodeURIComponent(callbackPath)}`;
-}
-
-function toOAuthStartPath(provider: 'google' | 'github', callbackPath: string): string {
-  const path = `/api/auth/oauth/${provider}/start`;
-  if (!callbackPath || callbackPath === '/') return path;
-  return `${path}?callbackUrl=${encodeURIComponent(callbackPath)}`;
+function toOAuthStartPath(provider: 'google' | 'github'): string {
+  return `/api/auth/oauth/${provider}/start`;
 }
 
 function mapAuthErrorMessage(errorCode: string | null): string | null {
@@ -42,7 +30,6 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
 
   const user = useAuthStore(state => state.user);
-  const loading = useAuthStore(state => state.loading);
   const apiError = useAuthStore(state => state.error);
 
   useHydrateAuthStore();
@@ -50,11 +37,8 @@ function LoginPageContent() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const callbackPath = useMemo(
-    () => normalizeCallbackPath(searchParams.get('callbackUrl')),
-    [searchParams],
-  );
   const oauthError = useMemo(
     () => mapAuthErrorMessage(searchParams.get('error')),
     [searchParams],
@@ -62,24 +46,30 @@ function LoginPageContent() {
 
   useEffect(() => {
     if (!user || user.isGuest) return;
-    router.replace(callbackPath);
-  }, [callbackPath, router, user]);
+    router.replace('/');
+  }, [router, user]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLocalError(null);
+    setIsSubmitting(true);
 
     try {
       await authActions.login({ identifier, password });
-      router.push(callbackPath);
+      router.push('/');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to login. Please try again.';
       setLocalError(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const effectiveError = localError || oauthError || apiError;
+  const notifyComingSoon = () => {
+    toast.info('coming soon.');
+  };
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
@@ -122,10 +112,10 @@ function LoginPageContent() {
             />
             <button
               type="submit"
-              disabled={loading}
+              disabled={isSubmitting}
               className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] bg-accent-primary text-[13px] font-semibold text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? (
+              {isSubmitting ? (
                 <LuLoader className="h-4 w-4 animate-spin" />
               ) : (
                 <LuLogIn className="h-4 w-4" />
@@ -144,14 +134,22 @@ function LoginPageContent() {
 
           <div className="space-y-2">
             <a
-              href={toOAuthStartPath('google', callbackPath)}
+              href={toOAuthStartPath('google')}
+              onClick={event => {
+                event.preventDefault();
+                notifyComingSoon();
+              }}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
             >
               <FcGoogle className="h-4 w-4" />
               Continue with Google
             </a>
             <a
-              href={toOAuthStartPath('github', callbackPath)}
+              href={toOAuthStartPath('github')}
+              onClick={event => {
+                event.preventDefault();
+                notifyComingSoon();
+              }}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
             >
               <LuGithub className="h-4 w-4" />
@@ -168,7 +166,11 @@ function LoginPageContent() {
           <p className="mt-5 text-center text-[12px] text-text-secondary">
             No account?{' '}
             <Link
-              href={toRegisterPath(callbackPath)}
+              href="/register"
+              onClick={event => {
+                event.preventDefault();
+                notifyComingSoon();
+              }}
               className="font-semibold text-accent-primary hover:underline"
             >
               Register

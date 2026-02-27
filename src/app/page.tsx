@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import {
   FiArrowRight,
   FiCheck,
@@ -12,6 +13,7 @@ import {
 import {
   LuClock3,
   LuFileText,
+  LuLoader,
   LuPanelLeftClose,
   LuPanelLeftOpen,
   LuPlus,
@@ -28,6 +30,8 @@ import {
   type SessionSummary,
   useSessionsStore,
 } from '@/stores/sessions-store';
+import { useAuthStore } from '@/stores/auth-store';
+import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
 import { UserCenterPanel } from '@/components/user-center-panel';
 
@@ -166,7 +170,11 @@ function extractYoutubeVideoId(url: string): string | null {
 
 export default function Home() {
   const router = useRouter();
-  const sessionItems = useSessionsStore(state => state.sessions);
+  const authUser = useAuthStore(state => state.user);
+  const { sessionItems, sessionsLoading } = useSessionsStore(state => ({
+    sessionItems: state.sessions,
+    sessionsLoading: state.loading,
+  }));
   const [input, setInput] = useState('');
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -174,6 +182,8 @@ export default function Home() {
     DEFAULT_HANDBOOK_STYLE,
   );
   const [formError, setFormError] = useState<string | null>(null);
+  const isGuestUser = authUser?.isGuest ?? true;
+  useHydrateAuthStore();
   useHydrateSessionsStore();
 
   const selectedVideoId = useMemo(() => {
@@ -206,6 +216,10 @@ export default function Home() {
 
   const handleCreateHandbook = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isGuestUser) {
+      toast.warning('Please login to create a guide.');
+      return;
+    }
 
     const normalizedFromInput = normalizeYoutubeUrl(input);
     const activeVideoUrl = selectedVideoUrl ?? normalizedFromInput;
@@ -291,48 +305,70 @@ export default function Home() {
               </div>
 
               <nav className="max-h-72 space-y-0.5 overflow-y-auto pb-2 md:h-[calc(100vh-66px)] md:max-h-none">
-                {sessionItems.map(session => {
-                  const isActive = session.id === featuredSessionId;
-                  return (
-                    <Link
-                      key={session.id}
-                      href={`/session/${session.id}`}
-                      title={session.title}
-                      className={`flex gap-3 rounded-[8px] px-3 py-3 transition ${
-                        isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
-                      }`}
-                    >
-                      <LuFileText
-                        className={`mt-0.5 h-[18px] w-[18px] shrink-0 ${
-                          isActive ? 'text-accent-primary' : 'text-text-tertiary'
-                        }`}
-                      />
-                      <div className="min-w-0">
-                        <p
-                          className={`truncate text-[13px] font-medium leading-4 ${
-                            isActive ? 'text-text-primary' : 'text-text-secondary'
-                          }`}
-                        >
-                          {session.title}
-                        </p>
-                        <p
-                          className={`mt-1 text-[11px] leading-4 ${
-                            session.isError ? 'text-status-error' : 'text-text-tertiary'
-                          }`}
-                        >
-                          {session.isError ? (
-                            'Error'
-                          ) : (
-                            <span className="inline-flex items-center gap-1">
-                              <LuClock3 className="h-3 w-3" />
-                              {session.meta}
-                            </span>
-                          )}
-                        </p>
+                {sessionsLoading && sessionItems.length === 0 ? (
+                  <div className="space-y-2 px-1 py-2">
+                    {Array.from({ length: 3 }, (_, index) => (
+                      <div
+                        key={`session-loading-${index}`}
+                        className="flex animate-pulse gap-3 rounded-[8px] px-3 py-3"
+                      >
+                        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded bg-border-light/70" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <span className="block h-3 w-2/3 rounded bg-border-light/70" />
+                          <span className="block h-2.5 w-1/3 rounded bg-border-light/60" />
+                        </div>
                       </div>
-                    </Link>
-                  );
-                })}
+                    ))}
+                  </div>
+                ) : (
+                  sessionItems.map(session => {
+                    const isActive = session.id === featuredSessionId;
+                    const isLoading = session.status === 'loading';
+                    return (
+                      <Link
+                        key={session.id}
+                        href={`/session/${session.id}`}
+                        title={session.title}
+                        className={`flex gap-3 rounded-[8px] px-3 py-3 transition ${
+                          isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
+                        }`}
+                      >
+                        <LuFileText
+                          className={`mt-0.5 h-[18px] w-[18px] shrink-0 ${
+                            isActive ? 'text-accent-primary' : 'text-text-tertiary'
+                          }`}
+                        />
+                        <div className="min-w-0">
+                          <p
+                            className={`truncate text-[13px] font-medium leading-4 ${
+                              isActive ? 'text-text-primary' : 'text-text-secondary'
+                            }`}
+                          >
+                            {session.title}
+                          </p>
+                          <p
+                            className={`mt-1 text-[11px] leading-4 ${
+                              session.isError ? 'text-status-error' : 'text-text-tertiary'
+                            }`}
+                          >
+                            {session.isError ? (
+                              'Error'
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                {isLoading ? (
+                                  <LuLoader className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <LuClock3 className="h-3 w-3" />
+                                )}
+                                {session.meta}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </Link>
+                    );
+                  })
+                )}
               </nav>
             </div>
           )}

@@ -454,24 +454,27 @@ export function getToolJsonPanel(
 
   if (toolName === 'search_image' || toolName === 'generate_image') {
     if (!isRecord(output)) return null;
-    const images = Array.isArray(output.images)
+    const rawImages = Array.isArray(output.images)
       ? output.images
-          .filter(isRecord)
-          .slice(0, 6)
-          .map(image => ({
-            block_id: typeof image.block_id === 'string' ? image.block_id : '',
-            block_title: typeof image.block_title === 'string' ? image.block_title : '',
-            query: typeof image.query === 'string' ? image.query : '',
-            alt: typeof image.alt === 'string' ? image.alt : '',
-            source: typeof image.source === 'string' ? image.source : '',
-            image_url:
-              typeof image.image_url === 'string'
-                ? image.image_url.startsWith('data:')
-                  ? `[data-url omitted, length=${image.image_url.length}]`
-                  : image.image_url
-                : '',
-          }))
-      : [];
+      : Array.isArray(output.image_refs)
+        ? output.image_refs
+        : [];
+    const images = rawImages
+      .filter(isRecord)
+      .slice(0, 6)
+      .map(image => ({
+        block_id: typeof image.block_id === 'string' ? image.block_id : '',
+        block_title: typeof image.block_title === 'string' ? image.block_title : '',
+        query: typeof image.query === 'string' ? image.query : '',
+        alt: typeof image.alt === 'string' ? image.alt : '',
+        source: typeof image.source === 'string' ? image.source : '',
+        image_url:
+          typeof image.image_url === 'string'
+            ? image.image_url.startsWith('data:')
+              ? `[data-url omitted, length=${image.image_url.length}]`
+              : image.image_url
+            : '',
+      }));
     const summary = {
       mode: typeof output.mode === 'string' ? output.mode : toolName,
       image_count:

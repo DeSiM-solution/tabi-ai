@@ -13,6 +13,7 @@ export type ValidationPolicy =
 
 export type ModelTask =
   | 'chat_orchestration'
+  | 'conversation_compaction'
   | 'json_compilation_strict'
   | 'spot_query_normalization'
   | 'handbook_image_query_planning'
@@ -98,6 +99,37 @@ const MODEL_TASK_ROUTES: Record<ModelTask, ModelTaskRoute> = {
       ),
       maxRetries: getPositiveIntEnv(
         process.env.CHAT_ORCHESTRATION_MAX_RETRIES,
+        1,
+      ),
+      validationPolicy: 'none',
+      stabilityTier: 'stable',
+    },
+  },
+  conversation_compaction: {
+    primary: {
+      provider: 'google',
+      modelId: process.env.CONVERSATION_COMPACTION_MODEL ?? 'gemini-2.5-flash',
+      label: 'Gemini 2.5 Flash',
+      stabilityTier: 'stable',
+    },
+    fallback: {
+      provider: 'google',
+      modelId:
+        process.env.CONVERSATION_COMPACTION_FALLBACK_MODEL ?? 'gemini-2.5-flash-lite',
+      label: 'Gemini 2.5 Flash Lite',
+      stabilityTier: 'stable',
+    },
+    policy: {
+      maxOutputTokens: getPositiveIntEnv(
+        process.env.CONVERSATION_COMPACTION_MAX_OUTPUT_TOKENS,
+        1_200,
+      ),
+      timeoutMs: getPositiveIntEnv(
+        process.env.CONVERSATION_COMPACTION_TIMEOUT_MS,
+        25_000,
+      ),
+      maxRetries: getPositiveIntEnv(
+        process.env.CONVERSATION_COMPACTION_MAX_RETRIES,
         1,
       ),
       validationPolicy: 'none',
@@ -301,7 +333,7 @@ export interface StructuredTaskResult<Schema extends z.ZodTypeAny> {
 }
 
 export interface TextTaskOptions {
-  task: Extract<ModelTask, 'handbook_html_generation'>;
+  task: Extract<ModelTask, 'handbook_html_generation' | 'conversation_compaction'>;
   prompt: string;
   system?: string;
   abortSignal?: AbortSignal;

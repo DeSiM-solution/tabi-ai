@@ -129,7 +129,7 @@ function toSessionSummary(model: SessionSummaryModel): SessionSummaryDto {
   const sessionTime = resolveSessionTimeValue(model.startedAt, model.createdAt);
   const meta =
     mappedStatus === 'loading'
-      ? `Running · ${formatStepLabel(model.currentStep)}`
+      ? formatStepLabel(model.currentStep)
       : mappedStatus === 'error'
         ? 'Error'
         : mappedStatus === 'cancelled'
@@ -171,6 +171,50 @@ function normalizeParts(parts: unknown, text: string | null): UIMessage['parts']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sanitizeStateContextForClient(context: unknown): unknown {
+  if (!isRecord(context)) return context ?? null;
+
+  const video = isRecord(context.video) ? context.video : null;
+  const handbookStyle =
+    typeof context.handbookStyle === 'string' ? context.handbookStyle : null;
+  const rawApifyVideos = Array.isArray(context.apifyVideos)
+    ? context.apifyVideos
+    : Array.isArray(context.apify_videos)
+      ? context.apify_videos
+      : [];
+
+  const apifyVideos = rawApifyVideos
+    .filter(isRecord)
+    .map(videoItem => ({
+      id: typeof videoItem.id === 'string' ? videoItem.id : '',
+      url: typeof videoItem.url === 'string' ? videoItem.url : '',
+      title: typeof videoItem.title === 'string' ? videoItem.title : '',
+      thumbnailUrl:
+        typeof videoItem.thumbnailUrl === 'string' ? videoItem.thumbnailUrl : null,
+      location: typeof videoItem.location === 'string' ? videoItem.location : null,
+      hashtags: Array.isArray(videoItem.hashtags)
+        ? videoItem.hashtags.filter((tag): tag is string => typeof tag === 'string')
+        : [],
+    }))
+    .filter(videoItem => videoItem.id && videoItem.url);
+
+  return {
+    video,
+    apifyVideos,
+    handbookStyle,
+  };
+}
+
+function getHandbookHtmlForClient(
+  handbookHtml: string | null,
+): string | null {
+  if (!handbookHtml) return null;
+  const maxCharsRaw = Number(process.env.SESSION_DETAIL_MAX_HANDBOOK_HTML_CHARS ?? 250_000);
+  const maxChars =
+    Number.isFinite(maxCharsRaw) && maxCharsRaw > 0 ? Math.floor(maxCharsRaw) : 250_000;
+  return handbookHtml.length <= maxChars ? handbookHtml : null;
 }
 
 function mergeJsonValues(base: unknown, patch: unknown): unknown {
@@ -467,7 +511,6 @@ export async function removeSession(sessionId: string, userId: string): Promise<
 
 export async function getSessionDetail(
   sessionId: string,
-  userId: string,
 ): Promise<SessionDetailDto | null> {
   let session: {
     id: string;
@@ -518,7 +561,6 @@ export async function getSessionDetail(
     session = await db.session.findFirst({
       where: {
         id: sessionId,
-        userId,
       },
       include: {
         state: true,
@@ -535,7 +577,6 @@ export async function getSessionDetail(
     session = await db.session.findFirst({
       where: {
         id: sessionId,
-        userId,
       },
       include: {
         state: {
@@ -574,11 +615,11 @@ export async function getSessionDetail(
     updatedAt: session.updatedAt.toISOString(),
     state: session.state
       ? {
-          context: session.state.context,
+          context: sanitizeStateContextForClient(session.state.context),
           blocks: session.state.blocks,
           spotBlocks: session.state.spotBlocks,
           toolOutputs: session.state.toolOutputs,
-          handbookHtml: session.state.handbookHtml,
+          handbookHtml: getHandbookHtmlForClient(session.state.handbookHtml),
           handbookLifecycle:
             session.state.handbookLifecycle ?? HANDBOOK_LIFECYCLE_STATUS.DRAFT,
           handbookPublishedAt: session.state.handbookPublishedAt
@@ -958,6 +999,37 @@ export async function getSessionHandbook(
     where: {
       id: sessionId,
       userId,
+    },
+    select: {
+      title: true,
+      state: {
+        select: {
+          handbookHtml: true,
+          handbookVersion: true,
+        },
+      },
+    },
+  });
+
+  if (!session?.state?.handbookHtml) return null;
+
+  return {
+    title: session.title,
+    html: session.state.handbookHtml,
+    handbookVersion: session.state.handbookVersion,
+  };
+}
+
+export async function getSessionHandbookById(
+  sessionId: string,
+): Promise<{
+  title: string;
+  html: string;
+  handbookVersion: number;
+} | null> {
+  const session = await db.session.findFirst({
+    where: {
+      id: sessionId,
     },
     select: {
       title: true,

@@ -70,16 +70,26 @@ export function extractPersistedHandbookImages(value: unknown): HandbookImageAss
   return parsed.success ? parsed.data : [];
 }
 
+function parsePersistedHandbookImages(value: unknown): HandbookImageAsset[] {
+  if (!Array.isArray(value)) return [];
+  const parsed = handbookImageAssetSchema.array().safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
 export function parsePersistedContext(value: unknown): {
   videoContext: VideoContext | null;
   apifyVideos: ApifyVideoResult[];
   handbookStyle: HandbookStyleId | null;
+  handbookImages: HandbookImageAsset[];
+  conversationSummary: string | null;
 } {
   if (!isRecord(value)) {
     return {
       videoContext: null,
       apifyVideos: [],
       handbookStyle: null,
+      handbookImages: [],
+      conversationSummary: null,
     };
   }
 
@@ -90,11 +100,26 @@ export function parsePersistedContext(value: unknown): {
   const handbookStyleFromVideo = isRecord(value.video)
     ? normalizeHandbookStyle(value.video.handbookStyle)
     : null;
+  const handbookImages = parsePersistedHandbookImages(
+    value.handbookImages ?? value.handbook_images,
+  );
+  const conversationSummary =
+    typeof value.conversationSummary === 'string'
+      ? value.conversationSummary
+      : typeof value.conversation_summary === 'string'
+        ? value.conversation_summary
+        : null;
+  const normalizedConversationSummary =
+    conversationSummary && conversationSummary.trim()
+      ? conversationSummary.trim().slice(0, 12_000)
+      : null;
 
   return {
     videoContext: videoFromNested ?? videoFromRoot,
     apifyVideos,
     handbookStyle: handbookStyleFromRoot ?? handbookStyleFromVideo,
+    handbookImages,
+    conversationSummary: normalizedConversationSummary,
   };
 }
 
@@ -102,13 +127,29 @@ export function buildPersistedContext(
   videoContext: VideoContext | null,
   apifyVideos: ApifyVideoResult[],
   handbookStyle: HandbookStyleId | null,
+  handbookImages: HandbookImageAsset[],
+  conversationSummary: string | null,
 ): Record<string, unknown> | null {
-  if (!videoContext && apifyVideos.length === 0 && !handbookStyle) return null;
+  const normalizedConversationSummary =
+    conversationSummary && conversationSummary.trim()
+      ? conversationSummary.trim().slice(0, 12_000)
+      : null;
+  if (
+    !videoContext &&
+    apifyVideos.length === 0 &&
+    !handbookStyle &&
+    handbookImages.length === 0 &&
+    !normalizedConversationSummary
+  ) {
+    return null;
+  }
 
   return {
     video: videoContext,
     apifyVideos,
     handbookStyle,
+    handbookImages,
+    conversationSummary: normalizedConversationSummary,
   };
 }
 
@@ -130,6 +171,12 @@ export async function hydrateRuntimeState(
       ? true
       : runtime.latestSpotBlocks.every(spot => spot.location !== null);
 
+  const parsedContext = parsePersistedContext(persistedState.context);
+  runtime.latestVideoContext = parsedContext.videoContext;
+  runtime.latestApifyVideos = parsedContext.apifyVideos;
+  runtime.latestHandbookStyle = parsedContext.handbookStyle;
+  runtime.latestConversationSummary = parsedContext.conversationSummary;
+
   Object.assign(runtime.latestToolOutputs, parsePersistedToolOutputs(persistedState.toolOutputs));
   const persistedSearchImages = extractPersistedHandbookImages(
     runtime.latestToolOutputs.search_image,
@@ -137,6 +184,7 @@ export async function hydrateRuntimeState(
   const persistedGeneratedImages = extractPersistedHandbookImages(
     runtime.latestToolOutputs.generate_image,
   );
+  const persistedContextImages = parsedContext.handbookImages;
   const handbookOutput = isRecord(runtime.latestToolOutputs.generate_handbook_html)
     ? runtime.latestToolOutputs.generate_handbook_html
     : null;
@@ -157,16 +205,20 @@ export async function hydrateRuntimeState(
   } else if (persistedSearchImages.length > 0) {
     runtime.latestImageMode = 'search_image';
     runtime.latestHandbookImages = persistedSearchImages;
+  } else if (persistedContextImages.length > 0) {
+    runtime.latestHandbookImages = persistedContextImages;
+    if (preferredImageMode === 'search_image' || preferredImageMode === 'generate_image') {
+      runtime.latestImageMode = preferredImageMode;
+    } else {
+      runtime.latestImageMode = persistedContextImages.some(image => image.source === 'imagen')
+        ? 'generate_image'
+        : 'search_image';
+    }
   }
 
   if (typeof persistedState.handbookHtml === 'string' && persistedState.handbookHtml) {
     runtime.latestHandbookHtml = persistedState.handbookHtml;
   }
-
-  const parsedContext = parsePersistedContext(persistedState.context);
-  runtime.latestVideoContext = parsedContext.videoContext;
-  runtime.latestApifyVideos = parsedContext.apifyVideos;
-  runtime.latestHandbookStyle = parsedContext.handbookStyle;
 
   for (const video of runtime.latestApifyVideos) {
     runtime.videoCache.set(video.id, video);
@@ -195,6 +247,8 @@ export async function persistSessionSnapshot(
       runtime.latestVideoContext,
       runtime.latestApifyVideos,
       runtime.latestHandbookStyle,
+      runtime.latestHandbookImages,
+      runtime.latestConversationSummary,
     ),
     blocks: runtime.latestBlocks,
     spotBlocks: runtime.latestSpotBlocks,

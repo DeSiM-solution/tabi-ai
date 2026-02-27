@@ -12,6 +12,7 @@ export function createRuntimeState(): AgentRuntimeState {
     latestHandbookImages: [],
     latestImageMode: null,
     latestHandbookHtml: null,
+    latestConversationSummary: null,
     requestAborted: false,
     requestToolStatus: {},
     requestToolErrors: {},

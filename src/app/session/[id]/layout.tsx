@@ -12,6 +12,7 @@ import {
   LuDownload,
   LuExternalLink,
   LuFileText,
+  LuLoader,
   LuMonitor,
   LuPencil,
   LuPanelLeftClose,
@@ -33,6 +34,7 @@ import {
   useSessionsStore,
   sessionsActions,
 } from '@/stores/sessions-store';
+import { useAuthStore } from '@/stores/auth-store';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 import { useSessionStore } from '@/stores/session-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
@@ -78,7 +80,10 @@ export default function SessionDetailLayout({
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const activeSessionId = typeof params.id === 'string' ? params.id : '';
-  const sessionItems = useSessionsStore(state => state.sessions);
+  const { sessionItems, sessionsLoading } = useSessionsStore(state => ({
+    sessionItems: state.sessions,
+    sessionsLoading: state.loading,
+  }));
   const activeSessionSummary = sessionItems.find(item => item.id === activeSessionId) ?? null;
   const {
     centerViewMode,
@@ -96,6 +101,7 @@ export default function SessionDetailLayout({
   const publicGuidePath = activeSessionId ? `/api/public/guide/${activeSessionId}` : null;
   const previewTarget = handbookPreviewUrl || guidePreviewPath;
   const isProcessBusy = useSessionStore(state => state.loading);
+  const isGuestUser = useAuthStore(state => state.user?.isGuest ?? true);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(
@@ -387,6 +393,12 @@ export default function SessionDetailLayout({
 
   const dispatchCenterToolbarAction = (action: CenterToolbarAction) => {
     if (!activeSessionId) return;
+    if (action === 'save' && isGuestUser) {
+      toast.warning('Please login to continue.', {
+        description: 'Saving blocks requires an account login.',
+      });
+      return;
+    }
     window.dispatchEvent(
       new CustomEvent<CenterToolbarActionDetail>(CENTER_TOOLBAR_ACTION_EVENT, {
         detail: {
@@ -458,107 +470,129 @@ export default function SessionDetailLayout({
               </div>
 
               <nav className="h-[calc(100vh-66px)] space-y-0.5 overflow-y-auto pb-2">
-                {sessionItems.map(session => {
-                  const isActive = session.id === activeSessionId;
-                  const isRenaming = renamingSessionId === session.id;
-                  const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
-                    isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
-                  }`;
-                  const iconClassName = `mt-0.5 h-[18px] w-[18px] shrink-0 ${
-                    isActive ? 'text-accent-primary' : 'text-text-tertiary'
-                  }`;
-
-                  return (
-                    <div
-                      key={session.id}
-                      onContextMenu={event => openSessionContextMenu(event, session.id)}
-                    >
-                      {isRenaming ? (
-                        <div className={rowClassName}>
-                          <LuFileText className={iconClassName} />
-                          <form
-                            className="min-w-0 flex-1"
-                            onSubmit={event => {
-                              event.preventDefault();
-                              commitRenameSession(session.id);
-                            }}
-                          >
-                            <input
-                              ref={renameInputRef}
-                              value={renameDraft}
-                              onChange={event => setRenameDraft(event.currentTarget.value)}
-                              onKeyDown={event => {
-                                if (event.key === 'Escape') {
-                                  event.preventDefault();
-                                  cancelRenameSession();
-                                }
-                              }}
-                              className="w-full rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-[13px] font-medium text-text-primary outline-none focus:border-accent-primary"
-                              placeholder="Session name"
-                            />
-                            <div className="mt-1 flex items-center gap-1.5">
-                              <button
-                                type="submit"
-                                className="rounded-md bg-accent-primary-bg px-2 py-0.5 text-[11px] font-medium text-accent-primary transition hover:brightness-95"
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={cancelRenameSession}
-                                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </form>
+                {sessionsLoading && sessionItems.length === 0 ? (
+                  <div className="space-y-2 px-1 py-2">
+                    {Array.from({ length: 3 }, (_, index) => (
+                      <div
+                        key={`session-loading-${index}`}
+                        className="flex animate-pulse gap-3 rounded-[8px] px-3 py-3"
+                      >
+                        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded bg-border-light/70" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <span className="block h-3 w-2/3 rounded bg-border-light/70" />
+                          <span className="block h-2.5 w-1/3 rounded bg-border-light/60" />
                         </div>
-                      ) : (
-                        <Link
-                          href={`/session/${session.id}`}
-                          className={rowClassName}
-                          title={session.title}
-                        >
-                          <LuFileText className={iconClassName} />
-                          <div className="min-w-0">
-                            <p
-                              className={`truncate text-[13px] font-medium leading-4 ${
-                                isActive ? 'text-text-primary' : 'text-text-secondary'
-                              }`}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  sessionItems.map(session => {
+                    const isActive = session.id === activeSessionId;
+                    const isRenaming = renamingSessionId === session.id;
+                    const isLoading = session.status === 'loading';
+                    const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
+                      isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
+                    }`;
+                    const iconClassName = `mt-0.5 h-[18px] w-[18px] shrink-0 ${
+                      isActive ? 'text-accent-primary' : 'text-text-tertiary'
+                    }`;
+
+                    return (
+                      <div
+                        key={session.id}
+                        onContextMenu={event => openSessionContextMenu(event, session.id)}
+                      >
+                        {isRenaming ? (
+                          <div className={rowClassName}>
+                            <LuFileText className={iconClassName} />
+                            <form
+                              className="min-w-0 flex-1"
+                              onSubmit={event => {
+                                event.preventDefault();
+                                commitRenameSession(session.id);
+                              }}
                             >
-                              {session.title}
-                            </p>
-                            <p
-                              className={`mt-1 text-[11px] leading-4 ${
-                                session.isError ? 'text-status-error' : 'text-text-tertiary'
-                              }`}
-                            >
-                              {session.isError ? (
-                                'Error'
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <span className="inline-flex items-center gap-1">
-                                    <LuClock3 className="h-3 w-3" />
-                                    {session.meta}
-                                  </span>
-                                  <span
-                                    className={`inline-flex h-5 items-center rounded-[999px] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] ${getLifecycleBadgeClassName(
-                                      session.handbookLifecycle ?? 'DRAFT',
-                                    )}`}
-                                  >
-                                    {getHandbookLifecycleLabel(
-                                      session.handbookLifecycle ?? 'DRAFT',
-                                    )}
-                                  </span>
-                                </span>
-                              )}
-                            </p>
+                              <input
+                                ref={renameInputRef}
+                                value={renameDraft}
+                                onChange={event => setRenameDraft(event.currentTarget.value)}
+                                onKeyDown={event => {
+                                  if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    cancelRenameSession();
+                                  }
+                                }}
+                                className="w-full rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-[13px] font-medium text-text-primary outline-none focus:border-accent-primary"
+                                placeholder="Session name"
+                              />
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <button
+                                  type="submit"
+                                  className="rounded-md bg-accent-primary-bg px-2 py-0.5 text-[11px] font-medium text-accent-primary transition hover:brightness-95"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelRenameSession}
+                                  className="rounded-md px-2 py-0.5 text-[11px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
                           </div>
-                        </Link>
-                      )}
-                    </div>
-                  );
-                })}
+                        ) : (
+                          <Link
+                            href={`/session/${session.id}`}
+                            className={rowClassName}
+                            title={session.title}
+                          >
+                            <LuFileText className={iconClassName} />
+                            <div className="min-w-0">
+                              <p
+                                className={`truncate text-[13px] font-medium leading-4 ${
+                                  isActive ? 'text-text-primary' : 'text-text-secondary'
+                                }`}
+                              >
+                                {session.title}
+                              </p>
+                              <p
+                                className={`mt-1 text-[11px] leading-4 ${
+                                  session.isError ? 'text-status-error' : 'text-text-tertiary'
+                                }`}
+                              >
+                                {session.isError ? (
+                                  'Error'
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="inline-flex items-center gap-1">
+                                      {isLoading ? (
+                                        <LuLoader className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <LuClock3 className="h-3 w-3" />
+                                      )}
+                                      {session.meta}
+                                    </span>
+                                    <span
+                                      className={`inline-flex h-5 items-center rounded-[999px] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] ${getLifecycleBadgeClassName(
+                                        session.handbookLifecycle ?? 'DRAFT',
+                                      )}`}
+                                    >
+                                      {getHandbookLifecycleLabel(
+                                        session.handbookLifecycle ?? 'DRAFT',
+                                      )}
+                                    </span>
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </Link>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </nav>
             </div>
           )}

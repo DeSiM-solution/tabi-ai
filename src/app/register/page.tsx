@@ -1,33 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { LuGithub, LuLoader, LuUserPlus } from 'react-icons/lu';
 import { FcGoogle } from 'react-icons/fc';
 import { authActions, useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 
-function normalizeCallbackPath(input: string | null): string {
-  if (!input) return '/';
-  if (!input.startsWith('/')) return '/';
-  return input;
-}
-
-function toLoginPath(callbackPath: string): string {
-  if (!callbackPath || callbackPath === '/') return '/login';
-  return `/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
-}
-
-function toOAuthStartPath(provider: 'google' | 'github', callbackPath: string): string {
-  const path = `/api/auth/oauth/${provider}/start`;
-  if (!callbackPath || callbackPath === '/') return path;
-  return `${path}?callbackUrl=${encodeURIComponent(callbackPath)}`;
+function toOAuthStartPath(provider: 'google' | 'github'): string {
+  return `/api/auth/oauth/${provider}/start`;
 }
 
 function RegisterPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const user = useAuthStore(state => state.user);
   const loading = useAuthStore(state => state.loading);
@@ -41,15 +27,10 @@ function RegisterPageContent() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const callbackPath = useMemo(
-    () => normalizeCallbackPath(searchParams.get('callbackUrl')),
-    [searchParams],
-  );
-
   useEffect(() => {
     if (!user || user.isGuest) return;
-    router.replace(callbackPath);
-  }, [callbackPath, router, user]);
+    router.replace('/');
+  }, [router, user]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -66,7 +47,7 @@ function RegisterPageContent() {
         email: email || null,
         password,
       });
-      router.push(callbackPath);
+      router.push('/');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to register. Please try again.';
@@ -155,14 +136,14 @@ function RegisterPageContent() {
 
           <div className="space-y-2">
             <a
-              href={toOAuthStartPath('google', callbackPath)}
+              href={toOAuthStartPath('google')}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
             >
               <FcGoogle className="h-4 w-4" />
               Continue with Google
             </a>
             <a
-              href={toOAuthStartPath('github', callbackPath)}
+              href={toOAuthStartPath('github')}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
             >
               <LuGithub className="h-4 w-4" />
@@ -179,7 +160,7 @@ function RegisterPageContent() {
           <p className="mt-5 text-center text-[12px] text-text-secondary">
             Already have an account?{' '}
             <Link
-              href={toLoginPath(callbackPath)}
+              href="/login"
               className="font-semibold text-accent-primary hover:underline"
             >
               Login

@@ -9,6 +9,11 @@ import {
 import { ensureSessionRunning } from '@/server/sessions';
 import { createRuntimeState } from '@/agent/context/runtime-state';
 import { hydrateRuntimeState, persistSessionSnapshot } from '@/agent/context/persistence';
+import {
+  buildSystemPromptWithConversationSummary,
+  compactConversationForModel,
+  isContextLimitErrorMessage,
+} from '@/agent/context/conversation-compaction';
 import { createRunToolStep } from '@/agent/context/step-runner';
 import { isAbortError, toErrorMessage } from '@/agent/context/utils';
 import type { AgentRuntimeState } from '@/agent/context/types';
@@ -154,11 +159,34 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       id: sessionId,
       description: latestUserText || null,
     });
-    await upsertChatMessages(sessionId, userId, messages);
+    const syncPersistMaxMessages = Number(process.env.CHAT_SYNC_PERSIST_MAX_MESSAGES ?? 80);
+    const shouldPersistAtStart =
+      Number.isFinite(syncPersistMaxMessages) &&
+      syncPersistMaxMessages > 0 &&
+      messages.length <= Math.floor(syncPersistMaxMessages);
+
+    if (shouldPersistAtStart) {
+      try {
+        await upsertChatMessages(sessionId, userId, messages);
+      } catch (error) {
+        console.warn('[chat_api] initial-message-persist-skipped', {
+          requestId,
+          sessionId,
+          messageCount: messages.length,
+          message: toErrorMessage(error),
+        });
+      }
+    } else {
+      console.warn('[chat_api] initial-message-persist-skipped-by-size', {
+        requestId,
+        sessionId,
+        messageCount: messages.length,
+        syncPersistMaxMessages,
+      });
+    }
   }
 
   const chatTask = resolveModelTask('chat_orchestration');
-  const modelMessages = await convertToModelMessages(messages);
   console.log('[chat_api] orchestration-model', {
     requestId,
     primary: `${chatTask.primary.provider}:${chatTask.primary.modelId}`,
@@ -175,7 +203,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   }
 
   const runToolStep = createRunToolStep({ sessionId, userId, runtime });
-  const executionAbortSignal: AbortSignal | undefined = undefined;
+  const executionAbortSignal: AbortSignal | undefined = req.signal;
   const hasPreparedImages = runtime.latestHandbookImages.length > 0;
   const hasBlocks = runtime.latestBlocks.length > 0;
 
@@ -189,14 +217,11 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       ? ({ type: 'tool', toolName: 'generate_handbook_html' } as const)
       : ('required' as const)
     : undefined;
-
-  const streamOptions = {
+  const sharedStreamOptions = {
     maxOutputTokens: chatTask.policy.maxOutputTokens,
-    system: ORCHESTRATION_SYSTEM_PROMPT,
     stopWhen: stepCountIs(9),
     activeTools: manualActiveTools,
     toolChoice: manualToolChoice,
-    messages: modelMessages,
     tools: buildAgentTools({
       req,
       abortSignal: executionAbortSignal,
@@ -217,10 +242,47 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     });
   }
 
-  const result = (() => {
+  const prepareOrchestrationInput = async (mode: 'standard' | 'aggressive') => {
+    const compaction = await compactConversationForModel({
+      messages,
+      previousSummary: runtime.latestConversationSummary,
+      mode,
+      abortSignal: req.signal,
+    });
+    runtime.latestConversationSummary = compaction.conversationSummary;
+    const modelMessages = await convertToModelMessages(compaction.modelMessages);
+    const systemPrompt = buildSystemPromptWithConversationSummary(
+      ORCHESTRATION_SYSTEM_PROMPT,
+      compaction.conversationSummary,
+    );
+
+    console.log('[chat_api] compaction', {
+      requestId,
+      mode,
+      compacted: compaction.compacted,
+      droppedMessageCount: compaction.droppedMessageCount,
+      inputCharEstimate: compaction.inputCharEstimate,
+      modelMessageCount: compaction.modelMessages.length,
+      hasConversationSummary: Boolean(compaction.conversationSummary),
+    });
+
+    return {
+      mode,
+      modelMessages,
+      systemPrompt,
+    };
+  };
+
+  const runOrchestrationStream = (prepared: {
+    mode: 'standard' | 'aggressive';
+    modelMessages: Awaited<ReturnType<typeof convertToModelMessages>>;
+    systemPrompt: string;
+  }) => {
     try {
       return streamText({
-        ...streamOptions,
+        ...sharedStreamOptions,
+        system: prepared.systemPrompt,
+        messages: prepared.modelMessages,
         model: chatTask.primary.model,
       });
     } catch (error) {
@@ -235,11 +297,33 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       });
 
       return streamText({
-        ...streamOptions,
+        ...sharedStreamOptions,
+        system: prepared.systemPrompt,
+        messages: prepared.modelMessages,
         model: chatTask.fallback.model,
       });
     }
-  })();
+  };
+
+  const standardInput = await prepareOrchestrationInput('standard');
+  let result: ReturnType<typeof streamText>;
+  try {
+    result = runOrchestrationStream(standardInput);
+  } catch (error) {
+    const message = toErrorMessage(error);
+    if (!isContextLimitErrorMessage(message)) {
+      throw error;
+    }
+
+    console.warn('[chat_api] orchestration-retry-after-context-limit', {
+      requestId,
+      mode: 'aggressive',
+      message,
+    });
+
+    const aggressiveInput = await prepareOrchestrationInput('aggressive');
+    result = runOrchestrationStream(aggressiveInput);
+  }
 
   return result.toUIMessageStreamResponse({
     // Keep original user messages in the stream state so persisted messages remain complete.

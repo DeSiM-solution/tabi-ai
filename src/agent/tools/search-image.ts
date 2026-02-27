@@ -99,12 +99,20 @@ export function createSearchImageTool(ctx: AgentToolContext) {
         ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(images);
         ctx.runtime.latestImageMode = 'search_image';
         const fallbackGeneratedCount = images.filter(image => image.source === 'imagen').length;
+        const imageRefs = ctx.runtime.latestHandbookImages.map(image => ({
+          block_id: image.block_id,
+          block_title: image.block_title,
+          alt: image.alt,
+          source: image.source,
+          credit: image.credit ?? null,
+        }));
 
         const output = {
           mode: 'search_image' as const,
           planner_model: plannerModel,
           image_count: ctx.runtime.latestHandbookImages.length,
-          images: ctx.runtime.latestHandbookImages,
+          fallback_generated_count: fallbackGeneratedCount,
+          image_refs: imageRefs,
         };
 
         console.log('[search_image] success', {

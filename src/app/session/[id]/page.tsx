@@ -5,7 +5,14 @@ import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LuArrowRight, LuCheck, LuLoader, LuSendHorizontal } from 'react-icons/lu';
+import { toast } from 'sonner';
+import {
+  LuArrowRight,
+  LuCheck,
+  LuLoader,
+  LuRefreshCw,
+  LuSendHorizontal,
+} from 'react-icons/lu';
 import { BlockEditorWorkspace } from './_components/block-editor-workspace';
 import { MessageContent } from './_components/message-content';
 import {
@@ -35,6 +42,8 @@ import {
   useSessionStore,
 } from '@/stores/session-store';
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
+import { useAuthStore } from '@/stores/auth-store';
+import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 import { formatSessionDateTime } from '@/lib/session-time';
 import {
   HANDBOOK_STYLE_OPTIONS,
@@ -348,6 +357,7 @@ export default function Chat() {
   const searchParams = useSearchParams();
   const initialInput = searchParams.get('initial') ?? '';
   const initialStyle = searchParams.get('style');
+  const authUser = useAuthStore(state => state.user);
   const currentSessionSummary = useSessionsStore(state =>
     state.sessions.find(session => session.id === sessionId) ?? null,
   );
@@ -385,6 +395,12 @@ export default function Chat() {
     useState<HandbookStyleId>('minimal-tokyo');
   const [setAsSessionDefault, setSetAsSessionDefault] = useState(true);
   const [editorHost, setEditorHost] = useState<HTMLElement | null>(null);
+  const [htmlPreviewLoadPhase, setHtmlPreviewLoadPhase] = useState<
+    'idle' | 'loading' | 'revealing'
+  >('idle');
+  const htmlPreviewRevealTimerRef = useRef<number | null>(null);
+  const isGuestUser = authUser?.isGuest ?? true;
+  useHydrateAuthStore();
 
   const didSendInitialInputRef = useRef(false);
   const loggedToolEventsRef = useRef<Set<string>>(new Set());
@@ -415,6 +431,74 @@ export default function Chat() {
   );
   const previewFrameWidth = previewDevice === 'mobile' ? 375 : 720;
   const previewFrameMaxHeight = 'calc(100vh - 128px)';
+  const hasHtmlPreviewSource = Boolean(handbookPreviewUrl || handbookHtml);
+  const showHtmlPreviewOverlay =
+    hasHtmlPreviewSource
+    && (htmlPreviewLoadPhase === 'loading' || htmlPreviewLoadPhase === 'revealing');
+  const previewFrameOpacityClass =
+    htmlPreviewLoadPhase === 'loading' ? 'opacity-0' : 'opacity-100';
+  const clearHtmlPreviewRevealTimer = useCallback(() => {
+    if (htmlPreviewRevealTimerRef.current !== null) {
+      window.clearTimeout(htmlPreviewRevealTimerRef.current);
+      htmlPreviewRevealTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isSessionHydrating || centerViewMode !== 'html') {
+      clearHtmlPreviewRevealTimer();
+      setHtmlPreviewLoadPhase('idle');
+      return;
+    }
+    if (!handbookPreviewUrl && !handbookHtml) {
+      clearHtmlPreviewRevealTimer();
+      setHtmlPreviewLoadPhase('idle');
+      return;
+    }
+    clearHtmlPreviewRevealTimer();
+    setHtmlPreviewLoadPhase('loading');
+  }, [
+    centerViewMode,
+    clearHtmlPreviewRevealTimer,
+    handbookHtml,
+    handbookPreviewUrl,
+    isSessionHydrating,
+  ]);
+
+  useEffect(
+    () => () => {
+      clearHtmlPreviewRevealTimer();
+    },
+    [clearHtmlPreviewRevealTimer],
+  );
+
+  useEffect(() => {
+    if (htmlPreviewLoadPhase !== 'revealing') return;
+    clearHtmlPreviewRevealTimer();
+    htmlPreviewRevealTimerRef.current = window.setTimeout(() => {
+      setHtmlPreviewLoadPhase('idle');
+      htmlPreviewRevealTimerRef.current = null;
+    }, 520);
+    return () => {
+      clearHtmlPreviewRevealTimer();
+    };
+  }, [clearHtmlPreviewRevealTimer, htmlPreviewLoadPhase]);
+
+  const handleHtmlPreviewLoad = useCallback(() => {
+    setHtmlPreviewLoadPhase(previous => {
+      if (previous === 'idle') return previous;
+      return 'revealing';
+    });
+  }, []);
+
+  const requireLogin = useCallback((description: string): boolean => {
+    if (!isGuestUser) return true;
+    toast.warning('Please login to continue.', {
+      description,
+    });
+    return false;
+  }, [isGuestUser]);
+
   const firstUserTextMessage = useMemo(() => {
     for (const message of messages) {
       if (message.role !== 'user') continue;
@@ -572,6 +656,10 @@ export default function Chat() {
           sessionEditorActions.setHandbookStatus(sessionId, 'ready');
           sessionEditorActions.setHandbookError(sessionId, null);
           sessionEditorActions.setCenterViewMode(sessionId, 'html');
+        } else if (previewPath) {
+          sessionEditorActions.setHandbookStatus(sessionId, 'ready');
+          sessionEditorActions.setHandbookError(sessionId, null);
+          sessionEditorActions.setCenterViewMode(sessionId, 'html');
         }
         if (previewPath) {
           const normalizedPreviewPath = toGuidePreviewPath(previewPath, sessionId);
@@ -632,6 +720,7 @@ export default function Chat() {
   useEffect(() => {
     if (didSendInitialInputRef.current) return;
     if (!initialInput.trim()) return;
+    if (isGuestUser) return;
 
     const prompt = toGuidePrompt(initialInput);
     if (!prompt) return;
@@ -649,7 +738,7 @@ export default function Chat() {
     didSendInitialInputRef.current = true;
     sendMessage({ text: prompt });
     router.replace(pathname);
-  }, [initialInput, pathname, router, sendMessage]);
+  }, [initialInput, isGuestUser, pathname, router, sendMessage]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -679,7 +768,7 @@ export default function Chat() {
     if (processState.loading) {
       const startedAt = currentSessionSummary?.startedAt ?? Date.now();
       sessionsActions.updateSession(sessionId, {
-        meta: `Running · ${formatToolLabel(processState.currentStep)}`,
+        meta: formatToolLabel(processState.currentStep),
         isError: false,
         status: 'loading',
         lastStep: processState.currentStep,
@@ -716,6 +805,7 @@ export default function Chat() {
   ]);
 
   const openEditor = (sourceKey: string, toolName: string, output: unknown) => {
+    if (!requireLogin('Editing blocks requires an account login.')) return;
     if (!sessionId) return;
     const session = createEditorSession(sourceKey, toolName, output);
     if (!session) {
@@ -730,6 +820,7 @@ export default function Chat() {
   };
 
   const saveEditor = useCallback((session: EditorSession) => {
+    if (!requireLogin('Editing blocks requires an account login.')) return;
     if (!sessionId) return;
     const nextOutput = applyEditorSession(session);
     sessionEditorActions.upsertEditedToolOutput(
@@ -743,7 +834,7 @@ export default function Chat() {
       toolName: session.toolName,
       blockCount: Array.isArray(nextOutput.blocks) ? nextOutput.blocks.length : 0,
     });
-  }, [persistEditorOutput, sessionId]);
+  }, [persistEditorOutput, requireLogin, sessionId]);
 
   const exportEditorCsv = useCallback((session: EditorSession) => {
     const nextOutput = applyEditorSession(session);
@@ -779,6 +870,7 @@ export default function Chat() {
       persistStyleAsDefault?: boolean;
     },
   ) => {
+    if (!requireLogin('Manual HTML generation requires an account login.')) return;
     if (!sessionId) return;
     if (isBusy) return;
     const nextOutput = applyEditorSession(session);
@@ -833,15 +925,16 @@ export default function Chat() {
       beforeCount: countGenerateHandbookOutputs(messages),
     };
     sendMessage({ text: prompt });
-  }, [handbookStyle, isBusy, messages, sendMessage, sessionId]);
+  }, [handbookStyle, isBusy, messages, requireLogin, sendMessage, sessionId]);
 
   const openStyleConfirmModal = useCallback((session: EditorSession) => {
+    if (!requireLogin('Manual HTML generation requires an account login.')) return;
     if (!sessionId || isBusy) return;
     setPendingStyleSession(session);
     setSelectedStyleOption(toStyleSelection(handbookStyle));
     setSetAsSessionDefault(true);
     setIsStyleConfirmOpen(true);
-  }, [handbookStyle, isBusy, sessionId]);
+  }, [handbookStyle, isBusy, requireLogin, sessionId]);
 
   const closeStyleConfirmModal = useCallback(() => {
     setIsStyleConfirmOpen(false);
@@ -973,7 +1066,7 @@ export default function Chat() {
 
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
-            if (!isRecord(output) || typeof output.html !== 'string') {
+            if (!isRecord(output)) {
               sessionEditorActions.setHandbookStatus(sessionId, 'error');
               sessionEditorActions.setHandbookError(
                 sessionId,
@@ -990,7 +1083,20 @@ export default function Chat() {
                       : Date.now()
                   }`
                 : null;
-            sessionEditorActions.setHandbookHtml(sessionId, output.html);
+            const inlineHtml =
+              typeof output.html === 'string' && output.html.trim().length > 0
+                ? output.html
+                : null;
+            if (!inlineHtml && !previewUrl) {
+              sessionEditorActions.setHandbookStatus(sessionId, 'error');
+              sessionEditorActions.setHandbookError(
+                sessionId,
+                'Handbook tool did not return inline HTML or preview URL.',
+              );
+              sessionEditorActions.setCenterViewMode(sessionId, 'html');
+              return;
+            }
+            sessionEditorActions.setHandbookHtml(sessionId, inlineHtml);
             sessionEditorActions.setHandbookPreviewUrl(sessionId, previewUrl);
             sessionEditorActions.setHandbookStatus(sessionId, 'ready');
             sessionEditorActions.setHandbookError(sessionId, null);
@@ -1021,6 +1127,7 @@ export default function Chat() {
 
   useEffect(() => {
     if (!sessionId) return;
+    if (isGuestUser) return;
     if (editorSession) return;
 
     for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
@@ -1049,14 +1156,14 @@ export default function Chat() {
         return;
       }
     }
-  }, [editedToolOutputs, editorSession, messages, sessionId]);
+  }, [editedToolOutputs, editorSession, isGuestUser, messages, sessionId]);
 
   const headerSubtitle = processState.stopped
     ? `Stopped at ${formatToolLabel(processState.currentStep)}`
     : processState.error || processState.failedStep
     ? `Failed at ${formatToolLabel(processState.failedStep)}`
     : processState.loading
-      ? `Running ${formatToolLabel(processState.currentStep)}`
+      ? formatToolLabel(processState.currentStep)
       : processState.completedSteps.length > 0
         ? `Completed ${processState.completedSteps.length}/${SESSION_TOOL_ORDER.length} steps`
         : 'Refine your guide';
@@ -1146,6 +1253,7 @@ export default function Chat() {
         className="border-t border-border-light bg-bg-elevated px-4 py-4"
         onSubmit={e => {
           e.preventDefault();
+          if (!requireLogin('Sending chat messages requires an account login.')) return;
           const prompt = toGuidePrompt(input);
           if (!prompt) {
             setInputError('Please enter a prompt or YouTube URL.');
@@ -1238,7 +1346,8 @@ export default function Chat() {
                         <iframe
                           title="Guide Preview"
                           src={handbookPreviewUrl}
-                          className="absolute inset-0 h-full w-full bg-bg-elevated"
+                          className={`absolute inset-0 h-full w-full bg-bg-elevated transition-opacity duration-500 ease-out ${previewFrameOpacityClass}`}
+                          onLoad={handleHtmlPreviewLoad}
                           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                         />
                       )}
@@ -1247,16 +1356,41 @@ export default function Chat() {
                         <iframe
                           title="Guide Preview"
                           srcDoc={handbookHtml}
-                          className="absolute inset-0 h-full w-full bg-bg-elevated"
+                          className={`absolute inset-0 h-full w-full bg-bg-elevated transition-opacity duration-500 ease-out ${previewFrameOpacityClass}`}
+                          onLoad={handleHtmlPreviewLoad}
                           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                         />
                       )}
 
-                      {!handbookHtml && handbookStatus === 'generating' && (
+                      {showHtmlPreviewOverlay && (
+                        <div
+                          className={`absolute inset-0 z-10 flex items-center justify-center transition-[background-color] duration-500 ${
+                            htmlPreviewLoadPhase === 'loading'
+                              ? 'bg-bg-elevated'
+                              : 'bg-bg-elevated/78'
+                          }`}
+                        >
+                          <div
+                            className={`flex flex-col items-center gap-2 transition-opacity duration-300 ${
+                              htmlPreviewLoadPhase === 'revealing' ? 'opacity-95' : 'opacity-100'
+                            }`}
+                          >
+                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
+                            <p className="text-[13px] font-medium text-text-secondary">
+                              Loading preview...
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {!handbookPreviewUrl && !handbookHtml && handbookStatus === 'generating' && (
                         <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated">
-                          <p className="text-sm font-medium text-text-tertiary">
-                            Generating guide HTML...
-                          </p>
+                          <div className="flex min-w-[190px] flex-col items-center gap-2 rounded-[12px] border border-border-light bg-bg-elevated px-5 py-4 shadow-[0_8px_24px_rgba(45,42,38,0.08)]">
+                            <LuLoader className="h-5 w-5 animate-spin text-accent-primary" />
+                            <p className="text-[12px] font-medium text-text-tertiary">
+                              Generating guide HTML...
+                            </p>
+                          </div>
                         </div>
                       )}
 
@@ -1288,9 +1422,9 @@ export default function Chat() {
                 <div className="absolute inset-0 z-20">
                   <BlockEditorWorkspace
                     session={editorSession}
-                    onChange={nextSession =>
-                      sessionEditorActions.setEditorSession(sessionId, nextSession)
-                    }
+                    onChange={nextSession => {
+                      sessionEditorActions.setEditorSession(sessionId, nextSession);
+                    }}
                   />
                 </div>
               )}

@@ -66,48 +66,46 @@ export async function upsertChatMessages(
 ): Promise<void> {
   await assertOwnedSession(sessionId, userId);
   const externalIds = messages.map(message => message.id);
-  await db.$transaction(async tx => {
-    for (const [seq, message] of messages.entries()) {
-      const text = extractText(message.parts);
-      await tx.chatMessage.upsert({
-        where: {
-          sessionId_externalId: {
-            sessionId,
-            externalId: message.id,
-          },
-        },
-        create: {
+  for (const [seq, message] of messages.entries()) {
+    const text = extractText(message.parts);
+    await db.chatMessage.upsert({
+      where: {
+        sessionId_externalId: {
           sessionId,
           externalId: message.id,
-          seq,
-          role: toMessageRole(message.role),
-          text,
-          parts: toNullableInputJson(message.parts),
-        },
-        update: {
-          seq,
-          role: toMessageRole(message.role),
-          text,
-          parts: toNullableInputJson(message.parts),
-        },
-      });
-    }
-
-    if (externalIds.length === 0) {
-      await tx.chatMessage.deleteMany({
-        where: { sessionId },
-      });
-      return;
-    }
-
-    await tx.chatMessage.deleteMany({
-      where: {
-        sessionId,
-        externalId: {
-          notIn: externalIds,
         },
       },
+      create: {
+        sessionId,
+        externalId: message.id,
+        seq,
+        role: toMessageRole(message.role),
+        text,
+        parts: toNullableInputJson(message.parts),
+      },
+      update: {
+        seq,
+        role: toMessageRole(message.role),
+        text,
+        parts: toNullableInputJson(message.parts),
+      },
     });
+  }
+
+  if (externalIds.length === 0) {
+    await db.chatMessage.deleteMany({
+      where: { sessionId },
+    });
+    return;
+  }
+
+  await db.chatMessage.deleteMany({
+    where: {
+      sessionId,
+      externalId: {
+        notIn: externalIds,
+      },
+    },
   });
 }
 

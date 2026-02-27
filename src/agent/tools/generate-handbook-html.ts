@@ -226,6 +226,15 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           });
         }
 
+        const inlineHtmlLimitRaw = Number(process.env.HANDBOOK_INLINE_HTML_MAX_CHARS ?? 180_000);
+        const inlineHtmlMaxChars =
+          Number.isFinite(inlineHtmlLimitRaw) && inlineHtmlLimitRaw > 0
+            ? Math.floor(inlineHtmlLimitRaw)
+            : 180_000;
+        const hasEmbeddedDataImage = /data:image\//i.test(html);
+        const includeInlineHtml =
+          !ctx.sessionId || (!hasEmbeddedDataImage && html.length <= inlineHtmlMaxChars);
+
         const handbookResult = {
           title: resolvedTitle,
           videoId: input.videoId ?? ctx.runtime.latestVideoContext?.videoId ?? '',
@@ -240,14 +249,16 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           handbook_style_label: handbookStyleLabel,
           generated_at: new Date().toISOString(),
           html_length: html.length,
+          html_included: includeInlineHtml,
           preview_url: ctx.sessionId ? `/api/guide/${ctx.sessionId}` : null,
-          html,
+          html: includeInlineHtml ? html : undefined,
         };
 
         console.log('[generate_handbook_html] success', {
           durationMs: getDurationMs(startedAt),
           model: modelSummary,
           htmlLength: handbookResult.html_length,
+          htmlIncluded: handbookResult.html_included,
         });
         console.log('[generate_handbook_html] output-meta', {
           title: handbookResult.title,

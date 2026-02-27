@@ -25,7 +25,7 @@ function getSessionId(params: { id: string }): string {
 }
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -35,8 +35,7 @@ export async function GET(
   }
 
   try {
-    const userId = getRequestUserId(req);
-    const session = await getSessionDetail(sessionId, userId);
+    const session = await getSessionDetail(sessionId);
     if (!session) {
       return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
     }

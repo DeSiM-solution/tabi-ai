@@ -1,14 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LuLoader,
   LuLogIn,
   LuLogOut,
   LuUser,
-  LuUserPlus,
 } from 'react-icons/lu';
 import { authActions, useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
@@ -28,20 +27,11 @@ function toInitial(name: string): string {
   return first.toUpperCase();
 }
 
-function buildAuthPath(basePath: '/login' | '/register', callbackPath: string): string {
-  const params = new URLSearchParams();
-  if (callbackPath && callbackPath !== '/') {
-    params.set('callbackUrl', callbackPath);
-  }
-  const query = params.toString();
-  return query ? `${basePath}?${query}` : basePath;
-}
-
 export function UserCenterPanel() {
+  const router = useRouter();
   const user = useAuthStore(state => state.user);
   const loading = useAuthStore(state => state.loading);
   const error = useAuthStore(state => state.error);
-  const pathname = usePathname();
 
   useHydrateAuthStore();
 
@@ -56,10 +46,6 @@ export function UserCenterPanel() {
     return toSafeDisplayName(user.displayName, user.username, user.email);
   }, [user]);
   const triggerLabel = isGuest ? 'Guest' : toInitial(displayName);
-
-  const callbackPath = pathname || '/';
-  const loginPath = buildAuthPath('/login', callbackPath);
-  const registerPath = buildAuthPath('/register', callbackPath);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +75,7 @@ export function UserCenterPanel() {
     try {
       await authActions.logout();
       setOpen(false);
+      router.replace('/login');
     } catch (logoutError) {
       const message =
         logoutError instanceof Error ? logoutError.message : 'Failed to logout.';
@@ -152,25 +139,16 @@ export function UserCenterPanel() {
           ) : isGuest ? (
             <div className="space-y-2">
               <p className="text-[12px] leading-5 text-text-secondary">
-                Login or register to keep your sessions under your own account.
+                Login to keep your sessions under your own account.
               </p>
 
               <Link
-                href={loginPath}
+                href="/login"
                 onClick={() => setOpen(false)}
                 className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] bg-accent-primary-bg text-[12px] font-semibold text-accent-primary transition hover:brightness-95"
               >
                 <LuLogIn className="h-4 w-4" />
                 Login
-              </Link>
-
-              <Link
-                href={registerPath}
-                onClick={() => setOpen(false)}
-                className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] border border-border-light text-[12px] font-semibold text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
-              >
-                <LuUserPlus className="h-4 w-4" />
-                Register
               </Link>
             </div>
           ) : (
