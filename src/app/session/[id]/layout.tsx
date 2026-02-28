@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  LuChevronDown,
+  LuArchive,
   LuCheck,
   LuCode,
   LuClock3,
   LuDownload,
   LuExternalLink,
   LuFileText,
+  LuGlobe,
   LuLoader,
   LuMonitor,
   LuPencil,
@@ -74,6 +75,16 @@ function getLifecycleBadgeClassName(lifecycle: HandbookLifecycle): string {
   return 'bg-amber-50 text-amber-700';
 }
 
+function renderLifecycleIcon(lifecycle: HandbookLifecycle) {
+  if (lifecycle === 'PUBLIC') {
+    return <LuGlobe className="h-[14px] w-[14px] shrink-0 text-emerald-600" />;
+  }
+  if (lifecycle === 'ARCHIVED') {
+    return <LuArchive className="h-[14px] w-[14px] shrink-0 text-zinc-500" />;
+  }
+  return <LuFileText className="h-[14px] w-[14px] shrink-0 text-amber-600" />;
+}
+
 export default function SessionDetailLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
@@ -112,9 +123,7 @@ export default function SessionDetailLayout({
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
-  const [isLifecycleMenuOpen, setIsLifecycleMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const lifecycleMenuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const chatResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   useHydrateSessionsStore();
@@ -200,46 +209,14 @@ export default function SessionDetailLayout({
     };
   }, [contextMenu]);
 
-  useEffect(() => {
-    if (!isLifecycleMenuOpen) return;
-
-    const closeMenu = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (target && lifecycleMenuRef.current?.contains(target)) return;
-      setIsLifecycleMenuOpen(false);
-    };
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setIsLifecycleMenuOpen(false);
-    };
-
-    const closeOnBlur = () => setIsLifecycleMenuOpen(false);
-
-    window.addEventListener('mousedown', closeMenu);
-    window.addEventListener('keydown', closeOnEscape);
-    window.addEventListener('blur', closeOnBlur);
-
-    return () => {
-      window.removeEventListener('mousedown', closeMenu);
-      window.removeEventListener('keydown', closeOnEscape);
-      window.removeEventListener('blur', closeOnBlur);
-    };
-  }, [isLifecycleMenuOpen]);
-
-  useEffect(() => {
-    if (centerViewMode === 'html') return;
-    setIsLifecycleMenuOpen(false);
-  }, [centerViewMode]);
-
   const openSessionContextMenu = (
     event: React.MouseEvent<HTMLElement>,
     sessionId: string,
   ) => {
     event.preventDefault();
 
-    const menuWidth = 180;
-    const menuHeight = 108;
+    const menuWidth = 208;
+    const menuHeight = 242;
     const x = Math.min(event.clientX + 8, window.innerWidth - menuWidth - 8);
     const y = Math.min(event.clientY + 8, window.innerHeight - menuHeight - 8);
     setContextMenu({
@@ -351,23 +328,27 @@ export default function SessionDetailLayout({
     }
   };
 
-  const updateHandbookLifecycle = async (nextLifecycle: HandbookLifecycle) => {
-    if (!activeSessionId || isUpdatingLifecycle) return;
-    const previousLifecycle = handbookLifecycle;
+  const updateHandbookLifecycle = async (
+    sessionId: string,
+    nextLifecycle: HandbookLifecycle,
+  ) => {
+    if (!sessionId || isUpdatingLifecycle) return;
+    const targetSession = sessionItems.find(item => item.id === sessionId);
+    const previousLifecycle = targetSession?.handbookLifecycle ?? 'DRAFT';
     if (nextLifecycle === previousLifecycle) return;
 
-    if (nextLifecycle === 'PUBLIC' && !hasHtml) {
+    if (nextLifecycle === 'PUBLIC' && sessionId === activeSessionId && !hasHtml) {
       toast.error('Generate handbook HTML before publishing.');
       return;
     }
 
-    sessionsActions.updateSession(activeSessionId, {
+    sessionsActions.updateSession(sessionId, {
       handbookLifecycle: nextLifecycle,
     });
     setIsUpdatingLifecycle(true);
-    setIsLifecycleMenuOpen(false);
+    setContextMenu(null);
     try {
-      const response = await fetch(`/api/sessions/${activeSessionId}/handbook-lifecycle`, {
+      const response = await fetch(`/api/sessions/${sessionId}/handbook-lifecycle`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lifecycle: nextLifecycle }),
@@ -381,7 +362,7 @@ export default function SessionDetailLayout({
       await sessionsActions.hydrateFromServer();
       toast.success(`Handbook moved to ${getHandbookLifecycleLabel(nextLifecycle)}.`);
     } catch (error) {
-      sessionsActions.updateSession(activeSessionId, {
+      sessionsActions.updateSession(sessionId, {
         handbookLifecycle: previousLifecycle,
       });
       console.error('[session-layout] update-handbook-lifecycle-failed', error);
@@ -418,6 +399,10 @@ export default function SessionDetailLayout({
     setIsResizingChatPanel(true);
     event.preventDefault();
   };
+  const contextMenuSession = contextMenu
+    ? (sessionItems.find(item => item.id === contextMenu.sessionId) ?? null)
+    : null;
+  const contextMenuLifecycle = contextMenuSession?.handbookLifecycle ?? 'DRAFT';
 
   return (
     <div className="h-screen overflow-hidden bg-bg-primary text-text-primary">
@@ -490,6 +475,7 @@ export default function SessionDetailLayout({
                     const isActive = session.id === activeSessionId;
                     const isRenaming = renamingSessionId === session.id;
                     const isLoading = session.status === 'loading';
+                    const sessionLifecycle = session.handbookLifecycle ?? 'DRAFT';
                     const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
                       isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
                     }`;
@@ -575,13 +561,14 @@ export default function SessionDetailLayout({
                                       {session.meta}
                                     </span>
                                     <span
-                                      className={`inline-flex h-5 items-center rounded-[999px] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] ${getLifecycleBadgeClassName(
-                                        session.handbookLifecycle ?? 'DRAFT',
+                                      className={`inline-flex h-5 items-center rounded-md px-2 text-[10px] uppercase ${getLifecycleBadgeClassName(
+                                        sessionLifecycle,
                                       )}`}
                                     >
-                                      {getHandbookLifecycleLabel(
-                                        session.handbookLifecycle ?? 'DRAFT',
-                                      )}
+                                      <span className="inline-flex items-center gap-1">
+                                        {renderLifecycleIcon(sessionLifecycle)}
+                                        <span>{getHandbookLifecycleLabel(sessionLifecycle)}</span>
+                                      </span>
                                     </span>
                                   </span>
                                 )}
@@ -638,60 +625,6 @@ export default function SessionDetailLayout({
 
                   {centerViewMode === 'html' ? (
                     <>
-                      <div
-                        ref={lifecycleMenuRef}
-                        className="relative flex items-center rounded-[8px] bg-bg-secondary p-[3px]"
-                      >
-                        <button
-                          type="button"
-                          aria-label="Select handbook status"
-                          aria-haspopup="menu"
-                          aria-expanded={isLifecycleMenuOpen}
-                          onClick={() => setIsLifecycleMenuOpen(previous => !previous)}
-                          disabled={isUpdatingLifecycle}
-                          className="inline-flex h-8 min-w-[132px] items-center justify-between gap-2 rounded-[6px] bg-bg-elevated px-[10px] text-[12px] font-medium text-text-primary transition hover:brightness-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <span>{getHandbookLifecycleLabel(handbookLifecycle)}</span>
-                          <LuChevronDown
-                            className={`h-[14px] w-[14px] text-text-tertiary transition-transform ${
-                              isLifecycleMenuOpen ? 'rotate-180' : ''
-                            }`}
-                          />
-                        </button>
-                        {isLifecycleMenuOpen ? (
-                          <div
-                            role="menu"
-                            aria-label="Handbook status options"
-                            className="absolute left-0 top-[calc(100%+6px)] z-40 min-w-[176px] overflow-hidden rounded-[8px] border border-border-light bg-bg-elevated p-1 shadow-[0_8px_24px_rgba(45,42,38,0.12)]"
-                          >
-                            {HANDBOOK_LIFECYCLE_OPTIONS.map(lifecycle => {
-                              const isSelected = lifecycle === handbookLifecycle;
-                              const publishBlocked = lifecycle === 'PUBLIC' && !hasHtml;
-                              return (
-                                <button
-                                  key={lifecycle}
-                                  type="button"
-                                  role="menuitemradio"
-                                  aria-checked={isSelected}
-                                  onClick={() => {
-                                    if (publishBlocked || isSelected) {
-                                      setIsLifecycleMenuOpen(false);
-                                      return;
-                                    }
-                                    void updateHandbookLifecycle(lifecycle);
-                                  }}
-                                  disabled={publishBlocked || isUpdatingLifecycle}
-                                  className="flex w-full items-center justify-between rounded-[6px] px-2.5 py-2 text-left text-[12px] font-medium text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:text-text-tertiary disabled:opacity-60"
-                                >
-                                  <span>{getHandbookLifecycleLabel(lifecycle)}</span>
-                                  {isSelected ? <LuCheck className="h-[13px] w-[13px]" /> : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-
                       <div className="flex items-center gap-0.5 rounded-[8px] bg-bg-secondary p-[3px]">
                         <button
                           type="button"
@@ -824,7 +757,7 @@ export default function SessionDetailLayout({
         <div
           ref={menuRef}
           style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 w-[180px] overflow-hidden rounded-[8px] bg-bg-elevated p-1 shadow-[0_4px_12px_rgba(0,0,0,0.09)]"
+          className="fixed z-50 w-[208px] overflow-hidden rounded-[8px] bg-bg-elevated p-1 shadow-[0_4px_12px_rgba(0,0,0,0.09)]"
         >
           <button
             type="button"
@@ -834,6 +767,32 @@ export default function SessionDetailLayout({
             <LuPencil className="h-[15px] w-[15px] shrink-0 text-text-secondary" />
             Rename
           </button>
+          <div className="mx-1 my-1 h-px bg-border-light" />
+          <p className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
+            Visibility
+          </p>
+          {HANDBOOK_LIFECYCLE_OPTIONS.map(lifecycle => {
+            const isSelected = lifecycle === contextMenuLifecycle;
+            return (
+              <button
+                key={lifecycle}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelected}
+                onClick={() =>
+                  void updateHandbookLifecycle(contextMenu.sessionId, lifecycle)
+                }
+                disabled={isSelected || isUpdatingLifecycle || !contextMenuSession}
+                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[13px] font-normal text-text-primary transition hover:bg-bg-secondary/70 disabled:cursor-not-allowed disabled:text-text-tertiary disabled:opacity-60"
+              >
+                <span className="inline-flex items-center gap-2">
+                  {renderLifecycleIcon(lifecycle)}
+                  <span>{getHandbookLifecycleLabel(lifecycle)}</span>
+                </span>
+                {isSelected ? <LuCheck className="h-[14px] w-[14px]" /> : null}
+              </button>
+            );
+          })}
           <div className="mx-1 my-1 h-px bg-border-light" />
           <button
             type="button"

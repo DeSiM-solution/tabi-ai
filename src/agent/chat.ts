@@ -21,6 +21,8 @@ import { ORCHESTRATION_SYSTEM_PROMPT } from '@/agent/prompts/orchestration-syste
 import type { PersistedToolName } from '@/agent/tools/types';
 import { buildAgentTools } from '@/agent/tools';
 
+type OrchestrationMode = 'full_pipeline' | 'handbook_regen';
+
 const NON_BLOCKING_TOOLS = new Set<PersistedToolName>(['resolve_spot_coordinates']);
 const IMAGE_TOOLS = new Set<PersistedToolName>(['search_image', 'generate_image']);
 const BLOCK_BUILD_TOOLS = new Set<PersistedToolName>([
@@ -38,6 +40,9 @@ const TOOL_PRIORITY: PersistedToolName[] = [
   'resolve_spot_coordinates',
 ];
 const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
+const FULL_PIPELINE_MAX_STEPS = 9;
+const HANDBOOK_REGEN_WITH_IMAGES_MAX_STEPS = 2;
+const HANDBOOK_REGEN_NEEDS_IMAGES_MAX_STEPS = 4;
 
 function isToolMessagePart(part: UIMessage['parts'][number]): part is UIMessage['parts'][number] & {
   type: `tool-${string}`;
@@ -205,6 +210,15 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   const executionAbortSignal: AbortSignal | undefined = req.signal;
   const hasPreparedImages = runtime.latestHandbookImages.length > 0;
   const hasBlocks = runtime.latestBlocks.length > 0;
+  const orchestrationMode: OrchestrationMode = isManualHandbookRequest
+    ? 'handbook_regen'
+    : 'full_pipeline';
+  const maxSteps =
+    orchestrationMode === 'full_pipeline'
+      ? FULL_PIPELINE_MAX_STEPS
+      : hasPreparedImages && hasBlocks
+        ? HANDBOOK_REGEN_WITH_IMAGES_MAX_STEPS
+        : HANDBOOK_REGEN_NEEDS_IMAGES_MAX_STEPS;
 
   const manualActiveTools: PersistedToolName[] | undefined = isManualHandbookRequest
     ? hasPreparedImages && hasBlocks
@@ -214,11 +228,14 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   const manualToolChoice = isManualHandbookRequest
     ? hasPreparedImages && hasBlocks
       ? ({ type: 'tool', toolName: 'generate_handbook_html' } as const)
-      : ('required' as const)
+      : undefined
     : undefined;
   const sharedStreamOptions = {
     maxOutputTokens: chatTask.policy.maxOutputTokens,
-    stopWhen: stepCountIs(9),
+    stopWhen: [
+      stepCountIs(maxSteps),
+      () => runtime.requestHasGeneratedHandbook,
+    ],
     activeTools: manualActiveTools,
     toolChoice: manualToolChoice,
     tools: buildAgentTools({
@@ -234,10 +251,12 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   if (isManualHandbookRequest) {
     console.log('[chat_api] manual-handbook-tooling', {
       requestId,
+      orchestrationMode,
       hasPreparedImages,
       hasBlocks,
       activeTools: manualActiveTools,
       toolChoice: manualToolChoice,
+      maxSteps,
     });
   }
 

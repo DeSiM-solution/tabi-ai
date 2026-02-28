@@ -220,6 +220,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         }
 
         ctx.runtime.latestHandbookHtml = html;
+        ctx.runtime.requestHasGeneratedHandbook = true;
         if (ctx.sessionId && ctx.userId) {
           await persistSessionSnapshot(ctx.sessionId, ctx.userId, ctx.runtime, {
             incrementHandbookVersion: true,

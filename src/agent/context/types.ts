@@ -20,6 +20,7 @@ export interface AgentRuntimeState {
   latestImageMode: 'search_image' | 'generate_image' | null;
   latestHandbookHtml: string | null;
   latestConversationSummary: string | null;
+  requestHasGeneratedHandbook: boolean;
   requestAborted: boolean;
   requestToolStatus: Partial<Record<PersistedToolName, 'running' | 'success' | 'error' | 'cancelled'>>;
   requestToolErrors: Partial<Record<PersistedToolName, string>>;
