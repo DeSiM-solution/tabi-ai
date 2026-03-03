@@ -2,29 +2,18 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  LuArchive,
-  LuCheck,
   LuCode,
-  LuClock3,
   LuDownload,
   LuExternalLink,
   LuFileText,
-  LuGlobe,
-  LuLoader,
   LuMonitor,
-  LuPencil,
-  LuPanelLeftClose,
-  LuPanelLeftOpen,
-  LuPlus,
   LuRefreshCw,
   LuSave,
   LuShare,
   LuSmartphone,
   LuSparkles,
-  LuTrash2,
 } from 'react-icons/lu';
 import { toast } from 'sonner';
 import {
@@ -37,9 +26,13 @@ import {
 } from '@/stores/sessions-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+import {
+  SessionContextMenu,
+  type SessionContextMenuState,
+} from '@/components/session-context-menu';
 import { useSessionStore } from '@/stores/session-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
-import { UserCenterPanel } from '@/components/user-center-panel';
+import { SessionSidebar } from '@/components/session-sidebar';
 import {
   sessionEditorActions,
   useSessionEditorSnapshot,
@@ -50,12 +43,6 @@ import {
   type CenterToolbarActionDetail,
 } from './_lib/center-toolbar-actions';
 
-interface SessionContextMenuState {
-  sessionId: string;
-  x: number;
-  y: number;
-}
-
 const CHAT_PANEL_MIN_WIDTH = 300;
 const CHAT_PANEL_MAX_WIDTH = 600;
 const CHAT_PANEL_DEFAULT_WIDTH = 430;
@@ -64,26 +51,6 @@ const HANDBOOK_LIFECYCLE_OPTIONS: HandbookLifecycle[] = [
   'PUBLIC',
   'ARCHIVED',
 ];
-
-function getLifecycleBadgeClassName(lifecycle: HandbookLifecycle): string {
-  if (lifecycle === 'PUBLIC') {
-    return 'bg-emerald-50 text-emerald-700';
-  }
-  if (lifecycle === 'ARCHIVED') {
-    return 'bg-zinc-100 text-zinc-600';
-  }
-  return 'bg-amber-50 text-amber-700';
-}
-
-function renderLifecycleIcon(lifecycle: HandbookLifecycle) {
-  if (lifecycle === 'PUBLIC') {
-    return <LuGlobe className="h-[14px] w-[14px] shrink-0 text-emerald-600" />;
-  }
-  if (lifecycle === 'ARCHIVED') {
-    return <LuArchive className="h-[14px] w-[14px] shrink-0 text-zinc-500" />;
-  }
-  return <LuFileText className="h-[14px] w-[14px] shrink-0 text-amber-600" />;
-}
 
 export default function SessionDetailLayout({
   children,
@@ -407,183 +374,24 @@ export default function SessionDetailLayout({
   return (
     <div className="h-screen overflow-hidden bg-bg-primary text-text-primary">
       <div className="flex h-full overflow-hidden">
-        <aside
-          className={`relative hidden shrink-0 overflow-visible xl:block xl:transition-[width] xl:duration-200 ${
-            isSidebarCollapsed
-              ? 'xl:w-0'
-              : 'border-r border-border-light bg-bg-elevated xl:w-[280px]'
-          }`}
-        >
-          {isSidebarCollapsed ? (
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="absolute left-4 top-4 z-20 flex h-7 w-7 items-center justify-center rounded-[6px] border border-border-light bg-bg-elevated text-text-secondary shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition hover:text-text-primary"
-              aria-label="Expand sessions sidebar"
-              aria-pressed={true}
-            >
-              <LuPanelLeftOpen className="h-4 w-4" />
-            </button>
-          ) : (
-            <div className="flex h-full flex-col gap-0.5 px-2">
-              <div className="flex items-center justify-between px-4 py-4">
-                <div className="flex items-center gap-2">
-                  <UserCenterPanel />
-                  <h2 className="font-sans text-[16px] font-semibold text-text-primary">
-                    Guides
-                  </h2>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarCollapsed(true)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition hover:bg-bg-secondary/70"
-                    aria-label="Collapse sessions sidebar"
-                    aria-pressed={false}
-                  >
-                    <LuPanelLeftClose className="h-4 w-4" />
-                  </button>
-                  <Link
-                    href="/"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95"
-                    aria-label="Back to home"
-                  >
-                    <LuPlus className="h-4 w-4" />
-                  </Link>
-                </div>
-              </div>
-
-              <nav className="h-[calc(100vh-66px)] space-y-0.5 overflow-y-auto pb-2">
-                {sessionsLoading && sessionItems.length === 0 ? (
-                  <div className="space-y-2 px-1 py-2">
-                    {Array.from({ length: 3 }, (_, index) => (
-                      <div
-                        key={`session-loading-${index}`}
-                        className="flex animate-pulse gap-3 rounded-[8px] px-3 py-3"
-                      >
-                        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded bg-border-light/70" />
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <span className="block h-3 w-2/3 rounded bg-border-light/70" />
-                          <span className="block h-2.5 w-1/3 rounded bg-border-light/60" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  sessionItems.map(session => {
-                    const isActive = session.id === activeSessionId;
-                    const isRenaming = renamingSessionId === session.id;
-                    const isLoading = session.status === 'loading';
-                    const sessionLifecycle = session.handbookLifecycle ?? 'DRAFT';
-                    const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
-                      isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
-                    }`;
-                    const iconClassName = `mt-0.5 h-[18px] w-[18px] shrink-0 ${
-                      isActive ? 'text-accent-primary' : 'text-text-tertiary'
-                    }`;
-
-                    return (
-                      <div
-                        key={session.id}
-                        onContextMenu={event => openSessionContextMenu(event, session.id)}
-                      >
-                        {isRenaming ? (
-                          <div className={rowClassName}>
-                            <LuFileText className={iconClassName} />
-                            <form
-                              className="min-w-0 flex-1"
-                              onSubmit={event => {
-                                event.preventDefault();
-                                commitRenameSession(session.id);
-                              }}
-                            >
-                              <input
-                                ref={renameInputRef}
-                                value={renameDraft}
-                                onChange={event => setRenameDraft(event.currentTarget.value)}
-                                onKeyDown={event => {
-                                  if (event.key === 'Escape') {
-                                    event.preventDefault();
-                                    cancelRenameSession();
-                                  }
-                                }}
-                                className="w-full rounded-md border border-border-default bg-bg-elevated px-2 py-1 text-[13px] font-medium text-text-primary outline-none focus:border-accent-primary"
-                                placeholder="Session name"
-                              />
-                              <div className="mt-1 flex items-center gap-1.5">
-                                <button
-                                  type="submit"
-                                  className="rounded-md bg-accent-primary-bg px-2 py-0.5 text-[11px] font-medium text-accent-primary transition hover:brightness-95"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelRenameSession}
-                                  className="rounded-md px-2 py-0.5 text-[11px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </form>
-                          </div>
-                        ) : (
-                          <Link
-                            href={`/session/${session.id}`}
-                            className={rowClassName}
-                            title={session.title}
-                          >
-                            <LuFileText className={iconClassName} />
-                            <div className="min-w-0">
-                              <p
-                                className={`truncate text-[13px] font-medium leading-4 ${
-                                  isActive ? 'text-text-primary' : 'text-text-secondary'
-                                }`}
-                              >
-                                {session.title}
-                              </p>
-                              <p
-                                className={`mt-1 text-[11px] leading-4 ${
-                                  session.isError ? 'text-status-error' : 'text-text-tertiary'
-                                }`}
-                              >
-                                {session.isError ? (
-                                  'Error'
-                                ) : (
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <span className="inline-flex items-center gap-1">
-                                      {isLoading ? (
-                                        <LuLoader className="h-3 w-3 animate-spin" />
-                                      ) : (
-                                        <LuClock3 className="h-3 w-3" />
-                                      )}
-                                      {session.meta}
-                                    </span>
-                                    <span
-                                      className={`inline-flex h-5 items-center rounded-md px-2 text-[10px] uppercase ${getLifecycleBadgeClassName(
-                                        sessionLifecycle,
-                                      )}`}
-                                    >
-                                      <span className="inline-flex items-center gap-1">
-                                        {renderLifecycleIcon(sessionLifecycle)}
-                                        <span>{getHandbookLifecycleLabel(sessionLifecycle)}</span>
-                                      </span>
-                                    </span>
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          </Link>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </nav>
-            </div>
-          )}
-        </aside>
+        <SessionSidebar
+          variant="detail"
+          sessionItems={sessionItems}
+          sessionsLoading={sessionsLoading}
+          activeSessionId={activeSessionId}
+          isCollapsed={isSidebarCollapsed}
+          onExpand={() => setIsSidebarCollapsed(false)}
+          onCollapse={() => setIsSidebarCollapsed(true)}
+          newSessionHref="/"
+          newSessionAriaLabel="Back to home"
+          onSessionContextMenu={openSessionContextMenu}
+          renamingSessionId={renamingSessionId}
+          renameDraft={renameDraft}
+          renameInputRef={renameInputRef}
+          onRenameDraftChange={setRenameDraft}
+          onRenameSubmit={commitRenameSession}
+          onRenameCancel={cancelRenameSession}
+        />
 
         <div className="flex min-w-0 flex-1 overflow-hidden">
           <section className="ui-page-enter-down hidden min-h-0 min-w-0 flex-1 flex-col lg:flex">
@@ -753,57 +561,19 @@ export default function SessionDetailLayout({
         </div>
       </div>
 
-      {contextMenu ? (
-        <div
-          ref={menuRef}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 w-[208px] overflow-hidden rounded-[8px] bg-bg-elevated p-1 shadow-[0_4px_12px_rgba(0,0,0,0.09)]"
-        >
-          <button
-            type="button"
-            onClick={() => startRenameSession(contextMenu.sessionId)}
-            className="flex w-full items-center gap-[10px] rounded-[6px] px-3 py-2 text-left text-[13px] font-normal text-text-primary transition hover:bg-bg-secondary/70"
-          >
-            <LuPencil className="h-[15px] w-[15px] shrink-0 text-text-secondary" />
-            Rename
-          </button>
-          <div className="mx-1 my-1 h-px bg-border-light" />
-          <p className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
-            Visibility
-          </p>
-          {HANDBOOK_LIFECYCLE_OPTIONS.map(lifecycle => {
-            const isSelected = lifecycle === contextMenuLifecycle;
-            return (
-              <button
-                key={lifecycle}
-                type="button"
-                role="menuitemradio"
-                aria-checked={isSelected}
-                onClick={() =>
-                  void updateHandbookLifecycle(contextMenu.sessionId, lifecycle)
-                }
-                disabled={isSelected || isUpdatingLifecycle || !contextMenuSession}
-                className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[13px] font-normal text-text-primary transition hover:bg-bg-secondary/70 disabled:cursor-not-allowed disabled:text-text-tertiary disabled:opacity-60"
-              >
-                <span className="inline-flex items-center gap-2">
-                  {renderLifecycleIcon(lifecycle)}
-                  <span>{getHandbookLifecycleLabel(lifecycle)}</span>
-                </span>
-                {isSelected ? <LuCheck className="h-[14px] w-[14px]" /> : null}
-              </button>
-            );
-          })}
-          <div className="mx-1 my-1 h-px bg-border-light" />
-          <button
-            type="button"
-            onClick={() => requestDeleteSession(contextMenu.sessionId)}
-            className="flex w-full items-center gap-[10px] rounded-[6px] px-3 py-2 text-left text-[13px] font-normal text-accent-secondary transition hover:bg-bg-secondary/70"
-          >
-            <LuTrash2 className="h-[15px] w-[15px] shrink-0 text-accent-secondary" />
-            Delete
-          </button>
-        </div>
-      ) : null}
+      <SessionContextMenu
+        menu={contextMenu}
+        menuRef={menuRef}
+        lifecycle={contextMenuLifecycle}
+        hasContextSession={Boolean(contextMenuSession)}
+        isUpdatingLifecycle={isUpdatingLifecycle}
+        lifecycleOptions={HANDBOOK_LIFECYCLE_OPTIONS}
+        onRename={startRenameSession}
+        onLifecycleChange={(sessionId, lifecycle) => {
+          void updateHandbookLifecycle(sessionId, lifecycle);
+        }}
+        onDelete={requestDeleteSession}
+      />
       <DeleteConfirmationDialog
         open={Boolean(pendingDeleteSession)}
         title="Delete Guide?"

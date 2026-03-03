@@ -1,8 +1,14 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { toast } from 'sonner';
 import {
   FiArrowRight,
@@ -11,13 +17,13 @@ import {
   FiYoutube,
 } from 'react-icons/fi';
 import {
-  LuClock3,
-  LuFileText,
   LuLoader,
-  LuPanelLeftClose,
-  LuPanelLeftOpen,
   LuPlus,
 } from 'react-icons/lu';
+import {
+  getHandbookLifecycleLabel,
+  type HandbookLifecycle,
+} from '@/lib/handbook-lifecycle';
 import {
   DEFAULT_HANDBOOK_STYLE,
   HANDBOOK_STYLE_OPTIONS,
@@ -33,13 +39,23 @@ import {
 import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
-import { UserCenterPanel } from '@/components/user-center-panel';
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+import {
+  SessionContextMenu,
+  type SessionContextMenuState,
+} from '@/components/session-context-menu';
+import { SessionSidebar } from '@/components/session-sidebar';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'youtu.be']);
 const EXAMPLE_VIDEOS = [
   { label: '48 Hours in Hiroshima and Miyajima', id: 'ZAmZgQlx_u4' },
   { label: 'How to Spend 4 Days in Osaka', id: 'hWXRiDOFFT0' },
 ] as const;
+const HANDBOOK_LIFECYCLE_OPTIONS: HandbookLifecycle[] = [
+  'DRAFT',
+  'PUBLIC',
+  'ARCHIVED',
+];
 
 function getStyleLabel(styleId: HandbookStyleId): string {
   if (styleId === 'minimal-tokyo') return 'Minimal\nTokyo';
@@ -186,8 +202,20 @@ export default function Home() {
     DEFAULT_HANDBOOK_STYLE,
   );
   const [formError, setFormError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(
+    null,
+  );
+  const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   useHydrateAuthStore();
   useHydrateSessionsStore();
+  const pendingDeleteSession = pendingDeleteSessionId
+    ? (sessionItems.find(item => item.id === pendingDeleteSessionId) ?? null)
+    : null;
   const isAuthHydrating = authSnapshot.loading || authSnapshot.lastFetched === null;
   const isGuestUser = authSnapshot.user?.isGuest ?? true;
 
@@ -202,6 +230,41 @@ export default function Home() {
     return extractYoutubeVideoId(selectedVideoUrl);
   }, [selectedVideoUrl]);
   const featuredSessionId = sessionItems[0]?.id ?? null;
+
+  useEffect(() => {
+    if (!renamingSessionId) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingSessionId]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && menuRef.current?.contains(target)) return;
+      setContextMenu(null);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setContextMenu(null);
+    };
+
+    const closeOnScroll = () => setContextMenu(null);
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('blur', closeOnScroll);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('blur', closeOnScroll);
+    };
+  }, [contextMenu]);
 
   if (isAuthHydrating || isGuestUser) {
     return (
@@ -271,127 +334,130 @@ export default function Home() {
       `/session/${nextItem.id}?initial=${encodeURIComponent(activeVideoUrl)}&style=${selectedStyle}`,
     );
   };
+  const openSessionContextMenu = (
+    event: ReactMouseEvent<HTMLElement>,
+    sessionId: string,
+  ) => {
+    event.preventDefault();
+
+    const menuWidth = 208;
+    const menuHeight = 242;
+    const x = Math.min(event.clientX + 8, window.innerWidth - menuWidth - 8);
+    const y = Math.min(event.clientY + 8, window.innerHeight - menuHeight - 8);
+    setContextMenu({
+      sessionId,
+      x: Math.max(8, x),
+      y: Math.max(8, y),
+    });
+  };
+
+  const startRenameSession = (sessionId: string) => {
+    const session = sessionItems.find(item => item.id === sessionId);
+    if (!session) return;
+    setIsSidebarCollapsed(false);
+    setContextMenu(null);
+    setRenamingSessionId(sessionId);
+    setRenameDraft(session.title);
+  };
+
+  const cancelRenameSession = () => {
+    setRenamingSessionId(null);
+    setRenameDraft('');
+  };
+
+  const commitRenameSession = (sessionId: string) => {
+    const trimmed = renameDraft.trim();
+    if (!trimmed) return;
+    sessionsActions.updateSession(sessionId, { title: trimmed });
+    cancelRenameSession();
+  };
+
+  const requestDeleteSession = (sessionId: string) => {
+    const target = sessionItems.find(item => item.id === sessionId);
+    if (!target) return;
+
+    setContextMenu(null);
+    if (renamingSessionId === sessionId) {
+      cancelRenameSession();
+    }
+    setPendingDeleteSessionId(sessionId);
+  };
+
+  const confirmDeleteSession = () => {
+    if (!pendingDeleteSession) {
+      setPendingDeleteSessionId(null);
+      return;
+    }
+
+    const deletedSessionId = pendingDeleteSession.id;
+    setPendingDeleteSessionId(null);
+    sessionsActions.removeSession(deletedSessionId);
+  };
+
+  const updateHandbookLifecycle = async (
+    sessionId: string,
+    nextLifecycle: HandbookLifecycle,
+  ) => {
+    if (!sessionId || isUpdatingLifecycle) return;
+    const targetSession = sessionItems.find(item => item.id === sessionId);
+    const previousLifecycle = targetSession?.handbookLifecycle ?? 'DRAFT';
+    if (nextLifecycle === previousLifecycle) return;
+
+    sessionsActions.updateSession(sessionId, {
+      handbookLifecycle: nextLifecycle,
+    });
+    setIsUpdatingLifecycle(true);
+    setContextMenu(null);
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/handbook-lifecycle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lifecycle: nextLifecycle }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || `Failed to update lifecycle (${response.status})`);
+      }
+      await sessionsActions.hydrateFromServer();
+      toast.success(`Handbook moved to ${getHandbookLifecycleLabel(nextLifecycle)}.`);
+    } catch (error) {
+      sessionsActions.updateSession(sessionId, {
+        handbookLifecycle: previousLifecycle,
+      });
+      console.error('[home-page] update-handbook-lifecycle-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update handbook lifecycle.');
+    } finally {
+      setIsUpdatingLifecycle(false);
+    }
+  };
+  const contextMenuSession = contextMenu
+    ? (sessionItems.find(item => item.id === contextMenu.sessionId) ?? null)
+    : null;
+  const contextMenuLifecycle = contextMenuSession?.handbookLifecycle ?? 'DRAFT';
 
   return (
     <div className="h-screen overflow-hidden bg-bg-primary text-text-primary">
       <div className="flex h-full flex-col md:flex-row">
-        <aside
-          className={`relative w-full overflow-visible md:h-full md:shrink-0 md:transition-[width] md:duration-200 ${
-            isSidebarCollapsed
-              ? 'w-0 border-r-0 bg-transparent md:w-0'
-              : 'w-full border-r border-border-light bg-bg-elevated md:w-[280px]'
-          }`}
-        >
-          {isSidebarCollapsed ? (
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="absolute left-4 top-4 z-20 flex h-7 w-7 items-center justify-center rounded-[6px] border border-border-light bg-bg-elevated text-text-secondary shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition hover:text-text-primary"
-              aria-label="Expand sessions sidebar"
-              aria-pressed={true}
-            >
-              <LuPanelLeftOpen className="h-4 w-4" />
-            </button>
-          ) : (
-            <div className="flex h-full flex-col gap-0.5 px-2">
-              <div className="flex items-center justify-between px-4 py-4">
-                <div className="flex items-center gap-2">
-                  <UserCenterPanel />
-                  <h2 className="font-sans text-[16px] font-semibold text-text-primary">
-                    Guides
-                  </h2>
-                </div>
-
-                <div className="hidden items-center gap-2 md:flex">
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarCollapsed(true)}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition hover:bg-bg-secondary/70"
-                    aria-label="Collapse sessions sidebar"
-                    aria-pressed={false}
-                  >
-                    <LuPanelLeftClose className="h-4 w-4" />
-                  </button>
-
-                  <Link
-                    href="/"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95"
-                    aria-label="Create new session"
-                  >
-                    <LuPlus className="h-4 w-4" />
-                  </Link>
-                </div>
-              </div>
-
-              <nav className="max-h-72 space-y-0.5 overflow-y-auto pb-2 md:h-[calc(100vh-66px)] md:max-h-none">
-                {sessionsLoading && sessionItems.length === 0 ? (
-                  <div className="space-y-2 px-1 py-2">
-                    {Array.from({ length: 3 }, (_, index) => (
-                      <div
-                        key={`session-loading-${index}`}
-                        className="flex animate-pulse gap-3 rounded-[8px] px-3 py-3"
-                      >
-                        <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded bg-border-light/70" />
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <span className="block h-3 w-2/3 rounded bg-border-light/70" />
-                          <span className="block h-2.5 w-1/3 rounded bg-border-light/60" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  sessionItems.map(session => {
-                    const isActive = session.id === featuredSessionId;
-                    const isLoading = session.status === 'loading';
-                    return (
-                      <Link
-                        key={session.id}
-                        href={`/session/${session.id}`}
-                        title={session.title}
-                        className={`flex gap-3 rounded-[8px] px-3 py-3 transition ${
-                          isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
-                        }`}
-                      >
-                        <LuFileText
-                          className={`mt-0.5 h-[18px] w-[18px] shrink-0 ${
-                            isActive ? 'text-accent-primary' : 'text-text-tertiary'
-                          }`}
-                        />
-                        <div className="min-w-0">
-                          <p
-                            className={`truncate text-[13px] font-medium leading-4 ${
-                              isActive ? 'text-text-primary' : 'text-text-secondary'
-                            }`}
-                          >
-                            {session.title}
-                          </p>
-                          <p
-                            className={`mt-1 text-[11px] leading-4 ${
-                              session.isError ? 'text-status-error' : 'text-text-tertiary'
-                            }`}
-                          >
-                            {session.isError ? (
-                              'Error'
-                            ) : (
-                              <span className="inline-flex items-center gap-1">
-                                {isLoading ? (
-                                  <LuLoader className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <LuClock3 className="h-3 w-3" />
-                                )}
-                                {session.meta}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </Link>
-                    );
-                  })
-                )}
-              </nav>
-            </div>
-          )}
-        </aside>
+        <SessionSidebar
+          variant="home"
+          sessionItems={sessionItems}
+          sessionsLoading={sessionsLoading}
+          activeSessionId={featuredSessionId}
+          isCollapsed={isSidebarCollapsed}
+          onExpand={() => setIsSidebarCollapsed(false)}
+          onCollapse={() => setIsSidebarCollapsed(true)}
+          newSessionHref="/"
+          newSessionAriaLabel="Create new session"
+          onSessionContextMenu={openSessionContextMenu}
+          renamingSessionId={renamingSessionId}
+          renameDraft={renameDraft}
+          renameInputRef={renameInputRef}
+          onRenameDraftChange={setRenameDraft}
+          onRenameSubmit={commitRenameSession}
+          onRenameCancel={cancelRenameSession}
+        />
 
         <main className="ui-page-enter-down flex flex-1 items-center justify-center overflow-y-auto px-5 py-10 md:px-6 md:py-14">
           <section className="w-full max-w-[480px] text-center">
@@ -523,6 +589,28 @@ export default function Home() {
           </section>
         </main>
       </div>
+
+      <SessionContextMenu
+        menu={contextMenu}
+        menuRef={menuRef}
+        lifecycle={contextMenuLifecycle}
+        hasContextSession={Boolean(contextMenuSession)}
+        isUpdatingLifecycle={isUpdatingLifecycle}
+        lifecycleOptions={HANDBOOK_LIFECYCLE_OPTIONS}
+        onRename={startRenameSession}
+        onLifecycleChange={(sessionId, lifecycle) => {
+          void updateHandbookLifecycle(sessionId, lifecycle);
+        }}
+        onDelete={requestDeleteSession}
+      />
+      <DeleteConfirmationDialog
+        open={Boolean(pendingDeleteSession)}
+        title="Delete Guide?"
+        description="This will permanently delete this guide and all associated data including videos, images, and chat history. This action cannot be undone."
+        confirmLabel="Delete"
+        onCancel={() => setPendingDeleteSessionId(null)}
+        onConfirm={confirmDeleteSession}
+      />
     </div>
   );
 }
