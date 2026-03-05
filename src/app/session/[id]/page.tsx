@@ -58,6 +58,10 @@ import {
   normalizeHandbookStyle,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
+import {
+  getHandbookLifecycleLabel,
+  type HandbookLifecycle,
+} from '@/lib/handbook-lifecycle';
 import { AestheticStyleSelector } from '@/components/aesthetic-style-selector';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 
@@ -153,6 +157,21 @@ function pickPreferredString(...values: unknown[]): string {
     if (next) return next;
   }
   return '';
+}
+
+function getHandbookLifecycleStatusLabel(lifecycle: HandbookLifecycle): string {
+  if (lifecycle === 'ARCHIVED') return 'Archive';
+  return getHandbookLifecycleLabel(lifecycle);
+}
+
+function getHandbookLifecycleBadgeClass(lifecycle: HandbookLifecycle): string {
+  if (lifecycle === 'PUBLIC') {
+    return 'border border-[#8BD9CF] bg-[#E7F8F4] text-[#0F766E]';
+  }
+  if (lifecycle === 'ARCHIVED') {
+    return 'border border-[#DDD6CF] bg-[#F6F3F0] text-[#6B6560]';
+  }
+  return 'border border-[#EAD8B6] bg-[#FFF7E8] text-[#9A5B13]';
 }
 
 function extractSessionTitleFromToolOutput(
@@ -1409,14 +1428,13 @@ export default function Chat() {
 
   const showBlocksView = centerViewMode === 'blocks';
   const showHtmlView = centerViewMode === 'html';
-  const activeHandbookIndex = sessionHandbooksState.handbooks.findIndex(
-    handbook => handbook.id === activeHandbookId,
-  );
-  const activeHandbookVersion =
-    activeHandbookIndex >= 0
-      ? sessionHandbooksState.handbooks.length - activeHandbookIndex
-      : 1;
-  const activeHandbookVersionLabel = `v${activeHandbookVersion}`;
+  const activeHandbook = activeHandbookId
+    ? (
+      sessionHandbooksState.handbooks.find(
+        handbook => handbook.id === activeHandbookId,
+      ) ?? null
+    )
+    : null;
   const pendingDeleteHandbookVersion = pendingDeleteHandbookVersionId
     ? (
       sessionHandbooksState.handbooks.find(
@@ -1690,9 +1708,15 @@ export default function Chat() {
                               : 'rounded-[6px] bg-bg-elevated hover:bg-bg-primary'
                           }`}
                         >
-                          <span className="inline-flex shrink-0 rounded-[5px] bg-bg-secondary px-1.5 py-[1px] text-[10px] font-semibold text-text-tertiary">
-                            {activeHandbookId ? activeHandbookVersionLabel : 'v-'}
-                          </span>
+                          {activeHandbook && (
+                            <span
+                              className={`inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
+                                activeHandbook.lifecycle,
+                              )}`}
+                            >
+                              {getHandbookLifecycleStatusLabel(activeHandbook.lifecycle)}
+                            </span>
+                          )}
                           <span className="min-w-0 flex-1 truncate text-[12px] font-normal text-text-primary">
                             {previewAddress}
                           </span>
@@ -1704,10 +1728,7 @@ export default function Chat() {
                         </button>
                         {isVersionMenuOpen && (
                           <div className="absolute left-0 right-0 top-full z-30 w-full overflow-hidden rounded-b-[10px] rounded-t-none border border-border-light border-t-0 bg-bg-elevated p-1">
-                            {sessionHandbooksState.handbooks.map((handbook, index) => {
-                              const versionLabel = `v${
-                                sessionHandbooksState.handbooks.length - index
-                              }`;
+                            {sessionHandbooksState.handbooks.map(handbook => {
                               const selected = handbook.id === activeHandbookId;
                               return (
                                 <div
@@ -1721,12 +1742,16 @@ export default function Chat() {
                                     onClick={() => void activateHandbookVersion(handbook.id)}
                                     className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-[8px] py-[4px] text-left"
                                   >
-                                    <span className="inline-flex shrink-0 rounded-[5px] bg-bg-secondary px-1.5 py-[1px] text-[10px] font-semibold text-text-tertiary">
-                                      {versionLabel}
+                                    <span
+                                      className={`inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
+                                        handbook.lifecycle,
+                                      )}`}
+                                    >
+                                      {getHandbookLifecycleStatusLabel(handbook.lifecycle)}
                                     </span>
                                     <span className="min-w-0 flex-1">
                                       <span className="block truncate text-[12px] font-medium text-text-primary">
-                                        {handbook.title || versionLabel}
+                                        {handbook.title || 'Untitled guide'}
                                       </span>
                                       <span className="block truncate text-[11px] text-text-secondary">
                                         {`/api/guide/${handbook.id}`}
@@ -1738,7 +1763,7 @@ export default function Chat() {
                                     onClick={() => requestDeleteHandbookVersion(handbook.id)}
                                     disabled={isRemovingHandbookVersion}
                                     className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#9C968F] transition hover:bg-bg-elevated hover:text-accent-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label={`Delete ${handbook.title || versionLabel}`}
+                                    aria-label={`Delete ${handbook.title || 'Untitled guide'}`}
                                   >
                                     <LuTrash2 className="h-[14px] w-[14px]" />
                                   </button>
