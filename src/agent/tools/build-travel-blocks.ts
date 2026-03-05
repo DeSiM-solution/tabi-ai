@@ -9,6 +9,7 @@ import {
   getSpotBlocks,
   getUniqueCachedVideos,
   getVideoThumbnailUrl,
+  normalizeSessionTitle,
   sanitizeTravelBlocks,
   syncSessionTitleWithVideo,
   validateTravelBlocksOutput,
@@ -55,8 +56,31 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
             );
           }
 
+          const resolvedTitle =
+            normalizeSessionTitle(targetVideo.title)
+            ?? normalizeSessionTitle(targetVideo.translatedTitle)
+            ?? normalizeSessionTitle(ctx.runtime.latestVideoContext?.title)
+            ?? 'Untitled Guide';
+          const resolvedVideoId =
+            typeof targetVideo.id === 'string' && targetVideo.id.trim()
+              ? targetVideo.id.trim()
+              : ctx.runtime.latestVideoContext?.videoId ?? '';
+          const resolvedVideoUrl =
+            typeof targetVideo.url === 'string' && targetVideo.url.trim()
+              ? targetVideo.url.trim()
+              : ctx.runtime.latestVideoContext?.videoUrl ?? '';
+          const resolvedThumbnailUrl =
+            getVideoThumbnailUrl(targetVideo)
+            ?? ctx.runtime.latestVideoContext?.thumbnailUrl
+            ?? null;
+          const resolvedHashtags = Array.isArray(targetVideo.hashtags)
+            ? targetVideo.hashtags
+            : ctx.runtime.latestVideoContext?.hashtags ?? [];
+
           console.log('[build_travel_blocks] context-ready', {
-            videoId: targetVideo.id,
+            videoId: resolvedVideoId,
+            title: resolvedTitle,
+            thumbnailUrl: resolvedThumbnailUrl,
           });
 
           let object;
@@ -106,20 +130,22 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
           ctx.runtime.latestHandbookImages = [];
           ctx.runtime.latestImageMode = null;
           ctx.runtime.latestVideoContext = {
-            videoId: targetVideo.id,
-            videoUrl: targetVideo.url,
-            title: targetVideo.title,
-            thumbnailUrl: getVideoThumbnailUrl(targetVideo),
+            videoId: resolvedVideoId,
+            videoUrl: resolvedVideoUrl,
+            title: resolvedTitle,
+            thumbnailUrl: resolvedThumbnailUrl,
             location: targetVideo.location,
-            hashtags: targetVideo.hashtags ?? [],
+            hashtags: resolvedHashtags,
           };
           await syncSessionTitleWithVideo(ctx.sessionId, ctx.userId, targetVideo);
 
           const buildResult = {
-            videoId: targetVideo.id,
-            videoUrl: targetVideo.url,
-            title: targetVideo.title,
-            thumbnailUrl: getVideoThumbnailUrl(targetVideo),
+            videoId: resolvedVideoId,
+            videoUrl: resolvedVideoUrl,
+            title: resolvedTitle,
+            thumbnailUrl: resolvedThumbnailUrl,
+            guideTitle: resolvedTitle,
+            coverImageUrl: resolvedThumbnailUrl,
             blockCount: blocks.length,
             blocks,
             spot_blocks: spotBlocks,

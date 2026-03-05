@@ -10,7 +10,9 @@ import {
 } from '@/agent/context/utils';
 import {
   ApifyVideoResult,
+  HANDBOOK_IMAGE_MIN_COVERAGE,
   HandbookImagePlan,
+  HANDBOOK_UNSPLASH_PER_PAGE,
   MAX_HANDBOOK_IMAGES,
   SpotBlock,
   SpotQueryOutput,
@@ -476,6 +478,52 @@ export function getImageTargetBlocks(
   return selected;
 }
 
+export function resolveImageTargetLimit(options: {
+  sourceBlockCount: number;
+  requestedCount?: number | null;
+  hardLimit?: number;
+}): number {
+  const safeSourceCount = Math.max(0, Math.floor(options.sourceBlockCount));
+  if (safeSourceCount === 0) return 0;
+
+  const hardLimit = Math.max(1, Math.floor(options.hardLimit ?? MAX_HANDBOOK_IMAGES));
+  const cappedBySource = Math.min(safeSourceCount, hardLimit);
+
+  if (typeof options.requestedCount !== 'number' || !Number.isFinite(options.requestedCount)) {
+    return cappedBySource;
+  }
+
+  const normalizedRequested = Math.max(1, Math.floor(options.requestedCount));
+  return Math.min(cappedBySource, normalizedRequested);
+}
+
+export function getRequiredImageCount(targetBlockCount: number): number {
+  if (targetBlockCount <= 0) return 0;
+  const required = Math.ceil(targetBlockCount * HANDBOOK_IMAGE_MIN_COVERAGE);
+  return Math.min(targetBlockCount, Math.max(1, required));
+}
+
+export function computeImageCoverageMetrics(
+  targetBlockCount: number,
+  matchedImageCount: number,
+): {
+  target_block_count: number;
+  required_image_count: number;
+  coverage_ratio: number;
+} {
+  const safeTarget = Math.max(0, targetBlockCount);
+  const safeMatched = Math.max(0, matchedImageCount);
+  const requiredImageCount = getRequiredImageCount(safeTarget);
+  const coverageRatio =
+    safeTarget === 0 ? 1 : Number((safeMatched / safeTarget).toFixed(4));
+
+  return {
+    target_block_count: safeTarget,
+    required_image_count: requiredImageCount,
+    coverage_ratio: coverageRatio,
+  };
+}
+
 export function buildGeocodeQueryVariants(query: string): string[] {
   const normalized = query.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
@@ -504,10 +552,14 @@ export function buildGeocodeQueryVariants(query: string): string[] {
 export function validateHandbookImagePlan(
   sourceBlocks: TravelBlock[],
   object: HandbookImagePlan,
+  options?: {
+    minImageCount?: number;
+  },
 ): string[] {
   const errors: string[] = [];
   const sourceIds = new Set(sourceBlocks.map(block => block.block_id));
   const seenIds = new Set<string>();
+  const minImageCount = Math.max(0, options?.minImageCount ?? 0);
 
   for (const item of object.images) {
     const blockId = item.block_id.trim();
@@ -542,6 +594,11 @@ export function validateHandbookImagePlan(
       `images length (${object.images.length}) cannot exceed source block count (${sourceBlocks.length}).`,
     );
   }
+  if (object.images.length < minImageCount) {
+    errors.push(
+      `images length (${object.images.length}) must be >= minimum required (${minImageCount}).`,
+    );
+  }
 
   return errors;
 }
@@ -569,6 +626,168 @@ function buildUnsplashQueryCandidates(query: string): string[] {
     shortened,
     ...splitByDelimiters,
   ]);
+}
+
+const TARGET_LANDSCAPE_ASPECT_RATIO = 16 / 9;
+const UNSPLASH_PREFERRED_MIN_WIDTH = 1200;
+const UNSPLASH_PREFERRED_MIN_HEIGHT = 675;
+
+const QUERY_TOKEN_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'from',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+  'travel',
+  'trip',
+  'guide',
+  'photo',
+  'image',
+]);
+
+function tokenizeQueryForScoring(query: string): string[] {
+  return uniqueNonEmptyStrings(
+    query
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .map(token => token.trim())
+      .filter(token => token.length >= 3 && !QUERY_TOKEN_STOPWORDS.has(token)),
+  );
+}
+
+function countMatchedTokens(tokens: string[], haystack: string): number {
+  if (tokens.length === 0 || !haystack) return 0;
+  let matched = 0;
+  for (const token of tokens) {
+    if (haystack.includes(token)) matched += 1;
+  }
+  return matched;
+}
+
+type UnsplashSearchResult = {
+  id?: string;
+  width?: number;
+  height?: number;
+  slug?: string;
+  description?: string | null;
+  alt_description?: string | null;
+  urls?: { regular?: string; full?: string };
+  links?: { html?: string };
+  user?: { name?: string };
+  tags?: Array<{ title?: string }>;
+};
+
+type UnsplashScoredCandidate = {
+  candidate: UnsplashSearchResult;
+  score: number;
+  score_breakdown: {
+    text: number;
+    aspect: number;
+    size: number;
+    metadata: number;
+  };
+  matched_tokens: number;
+};
+
+function scoreUnsplashCandidate(
+  candidate: UnsplashSearchResult,
+  queryTokens: string[],
+): UnsplashScoredCandidate {
+  const width = typeof candidate.width === 'number' ? candidate.width : null;
+  const height = typeof candidate.height === 'number' ? candidate.height : null;
+  const tagsText =
+    Array.isArray(candidate.tags)
+      ? candidate.tags
+          .map(tag => (typeof tag?.title === 'string' ? tag.title : ''))
+          .filter(Boolean)
+          .join(' ')
+      : '';
+  const searchCorpus = [
+    candidate.slug ?? '',
+    candidate.description ?? '',
+    candidate.alt_description ?? '',
+    tagsText,
+    candidate.user?.name ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
+  const matchedTokenCount = countMatchedTokens(queryTokens, searchCorpus);
+  const tokenCoverage = queryTokens.length > 0 ? matchedTokenCount / queryTokens.length : 0;
+  const textScore = Math.round(tokenCoverage * 70);
+
+  let aspectScore = 0;
+  if (width && height && width > 0 && height > 0) {
+    const ratio = width / height;
+    const ratioDiff = Math.abs(ratio - TARGET_LANDSCAPE_ASPECT_RATIO);
+    aspectScore = Math.max(0, Math.round(15 - ratioDiff * 30));
+  }
+
+  let sizeScore = 0;
+  if (width && height) {
+    if (width >= UNSPLASH_PREFERRED_MIN_WIDTH && height >= UNSPLASH_PREFERRED_MIN_HEIGHT) {
+      sizeScore = 10;
+    } else if (width >= 960 && height >= 540) {
+      sizeScore = 5;
+    }
+  }
+
+  const metadataScore =
+    (typeof candidate.links?.html === 'string' && candidate.links.html ? 3 : 0) +
+    (typeof candidate.user?.name === 'string' && candidate.user.name ? 2 : 0);
+
+  return {
+    candidate,
+    score: textScore + aspectScore + sizeScore + metadataScore,
+    score_breakdown: {
+      text: textScore,
+      aspect: aspectScore,
+      size: sizeScore,
+      metadata: metadataScore,
+    },
+    matched_tokens: matchedTokenCount,
+  };
+}
+
+export type UnsplashFetchAttempt = {
+  query: string;
+  attempt: number;
+  status:
+    | 'selected'
+    | 'empty'
+    | 'http_error'
+    | 'rate_limited'
+    | 'network_error'
+    | 'retrying';
+  http_status: number | null;
+  result_count: number | null;
+  best_score: number | null;
+  message: string | null;
+};
+
+export type UnsplashFetchDebug = {
+  requested_query: string;
+  query_candidates: string[];
+  selected_query: string | null;
+  selected_score: number | null;
+  attempts: UnsplashFetchAttempt[];
+};
+
+export class UnsplashSearchError extends Error {
+  readonly debug: UnsplashFetchDebug;
+
+  constructor(message: string, debug: UnsplashFetchDebug) {
+    super(message);
+    this.name = 'UnsplashSearchError';
+    this.debug = debug;
+  }
 }
 
 async function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
@@ -604,6 +823,7 @@ export async function fetchUnsplashPhoto(
   credit: string | null;
   width: number | null;
   height: number | null;
+  debug: UnsplashFetchDebug;
 }> {
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
   if (!normalizedQuery) {
@@ -617,13 +837,17 @@ export async function fetchUnsplashPhoto(
   }
 
   const queryCandidates = buildUnsplashQueryCandidates(normalizedQuery);
+  const queryTokens = tokenizeQueryForScoring(normalizedQuery);
+  const attempts: UnsplashFetchAttempt[] = [];
   let lastError: string | null = null;
+  let selectedQuery: string | null = null;
+  let selectedScore: number | null = null;
 
   for (const candidate of queryCandidates) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const response = await fetch(
-          `https://api.unsplash.com/search/photos?page=1&per_page=1&orientation=landscape&content_filter=high&query=${encodeURIComponent(candidate)}`,
+          `https://api.unsplash.com/search/photos?page=1&per_page=${HANDBOOK_UNSPLASH_PER_PAGE}&orientation=landscape&content_filter=high&query=${encodeURIComponent(candidate)}`,
           {
             method: 'GET',
             headers: {
@@ -637,17 +861,41 @@ export async function fetchUnsplashPhoto(
         if (response.status === 403 || response.status === 429) {
           const body = await response.text();
           lastError = `Unsplash search failed (${response.status}) for "${candidate}": ${body}`;
+          attempts.push({
+            query: candidate,
+            attempt: attempt + 1,
+            status: 'rate_limited',
+            http_status: response.status,
+            result_count: null,
+            best_score: null,
+            message: body || null,
+          });
           console.warn('[search_image] unsplash-rate-limit', {
             candidate,
             status: response.status,
           });
-          throw new Error(lastError);
+          throw new UnsplashSearchError(lastError, {
+            requested_query: normalizedQuery,
+            query_candidates: queryCandidates,
+            selected_query: selectedQuery,
+            selected_score: selectedScore,
+            attempts,
+          });
         }
 
         if (!response.ok) {
           const body = await response.text();
           lastError = `Unsplash search failed (${response.status}) for "${candidate}": ${body}`;
           const retryable = response.status >= 500 && attempt === 0;
+          attempts.push({
+            query: candidate,
+            attempt: attempt + 1,
+            status: retryable ? 'retrying' : 'http_error',
+            http_status: response.status,
+            result_count: null,
+            best_score: null,
+            message: body || null,
+          });
           if (retryable) {
             await sleepWithAbort(300, requestSignal);
             continue;
@@ -656,32 +904,81 @@ export async function fetchUnsplashPhoto(
         }
 
         const payload = (await response.json()) as {
-          results?: Array<{
-            width?: number;
-            height?: number;
-            urls?: { regular?: string; full?: string };
-            links?: { html?: string };
-            user?: { name?: string };
-          }>;
+          results?: UnsplashSearchResult[];
         };
-        const first = payload.results?.find(
-          result => typeof result.urls?.regular === 'string' || typeof result.urls?.full === 'string',
+        const candidates = (payload.results ?? []).filter(
+          result =>
+            typeof result.urls?.regular === 'string' ||
+            typeof result.urls?.full === 'string',
         );
-
-        if (!first?.urls?.regular && !first?.urls?.full) {
+        if (candidates.length === 0) {
           lastError = `Unsplash returned no image for query "${candidate}"`;
+          attempts.push({
+            query: candidate,
+            attempt: attempt + 1,
+            status: 'empty',
+            http_status: response.status,
+            result_count: 0,
+            best_score: null,
+            message: lastError,
+          });
           break;
         }
 
+        const scored = candidates
+          .map(item => scoreUnsplashCandidate(item, queryTokens))
+          .sort((a, b) => b.score - a.score);
+        const best = scored[0] ?? null;
+        const selected = best?.candidate ?? null;
+
+        if (!selected?.urls?.regular && !selected?.urls?.full) {
+          lastError = `Unsplash returned no image for query "${candidate}"`;
+          attempts.push({
+            query: candidate,
+            attempt: attempt + 1,
+            status: 'empty',
+            http_status: response.status,
+            result_count: candidates.length,
+            best_score: best?.score ?? null,
+            message: lastError,
+          });
+          break;
+        }
+
+        selectedQuery = candidate;
+        selectedScore = best?.score ?? null;
+        attempts.push({
+          query: candidate,
+          attempt: attempt + 1,
+          status: 'selected',
+          http_status: response.status,
+          result_count: candidates.length,
+          best_score: best?.score ?? null,
+          message:
+            best && queryTokens.length > 0
+              ? `matched_tokens=${best.matched_tokens}/${queryTokens.length}; breakdown=${JSON.stringify(best.score_breakdown)}`
+              : null,
+        });
+
         return {
-          image_url: first.urls?.regular ?? first.urls?.full ?? '',
-          source_page: first.links?.html ?? null,
-          credit: first.user?.name ? `Photo by ${first.user.name} on Unsplash` : null,
-          width: typeof first.width === 'number' ? first.width : null,
-          height: typeof first.height === 'number' ? first.height : null,
+          image_url: selected.urls?.regular ?? selected.urls?.full ?? '',
+          source_page: selected.links?.html ?? null,
+          credit: selected.user?.name ? `Photo by ${selected.user.name} on Unsplash` : null,
+          width: typeof selected.width === 'number' ? selected.width : null,
+          height: typeof selected.height === 'number' ? selected.height : null,
+          debug: {
+            requested_query: normalizedQuery,
+            query_candidates: queryCandidates,
+            selected_query: selectedQuery,
+            selected_score: selectedScore,
+            attempts,
+          },
         };
       } catch (error) {
         if (isAbortError(error)) {
+          throw error;
+        }
+        if (error instanceof UnsplashSearchError) {
           throw error;
         }
         const message = toErrorMessage(error);
@@ -689,6 +986,15 @@ export async function fetchUnsplashPhoto(
           throw new Error(message);
         }
         lastError = `Unsplash request failed for "${candidate}": ${message}`;
+        attempts.push({
+          query: candidate,
+          attempt: attempt + 1,
+          status: attempt === 0 ? 'retrying' : 'network_error',
+          http_status: null,
+          result_count: null,
+          best_score: null,
+          message,
+        });
         if (attempt === 0) {
           await sleepWithAbort(300, requestSignal);
           continue;
@@ -702,8 +1008,15 @@ export async function fetchUnsplashPhoto(
     query: normalizedQuery,
     lastError,
   });
-  throw new Error(
+  throw new UnsplashSearchError(
     lastError ?? `Unsplash returned no usable image for query "${normalizedQuery}"`,
+    {
+      requested_query: normalizedQuery,
+      query_candidates: queryCandidates,
+      selected_query: selectedQuery,
+      selected_score: selectedScore,
+      attempts,
+    },
   );
 }
 

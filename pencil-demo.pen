@@ -2285,7 +2285,7 @@
         },
         {
           "type": "frame",
-          "id": "J48yr",
+          "id": "UH8jj",
           "name": "chatPanelFull",
           "width": 380,
           "height": "fill_container",
@@ -2297,7 +2297,7 @@
           "children": [
             {
               "type": "frame",
-              "id": "wpZ4H",
+              "id": "QNOum",
               "name": "resizeHandle",
               "width": 8,
               "height": "fill_container",
@@ -2313,7 +2313,7 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "BveL9",
+                  "id": "nHyW1",
                   "name": "resizeBar",
                   "width": 4,
                   "height": 40,
@@ -2324,7 +2324,7 @@
             },
             {
               "type": "frame",
-              "id": "a6doj",
+              "id": "Jzfqt",
               "name": "chatContent",
               "width": "fill_container",
               "height": "fill_container",
@@ -2333,7 +2333,7 @@
               "children": [
                 {
                   "type": "frame",
-                  "id": "cbc75",
+                  "id": "PQXcN",
                   "name": "chatHeader",
                   "width": "fill_container",
                   "stroke": {
@@ -2353,7 +2353,7 @@
                   "children": [
                     {
                       "type": "text",
-                      "id": "yC9wS",
+                      "id": "OLTby",
                       "name": "chatTtl",
                       "fill": "$--text-primary",
                       "content": "A Solo Journey Through Kyoto: Cafes...",
@@ -2363,7 +2363,7 @@
                     },
                     {
                       "type": "text",
-                      "id": "0D26c",
+                      "id": "M56oV",
                       "name": "chatTtl",
                       "fill": "$--text-tertiary",
                       "content": "Completed 2/7 steps",
@@ -2375,7 +2375,7 @@
                 },
                 {
                   "type": "frame",
-                  "id": "83wkJ",
+                  "id": "vFqGA",
                   "name": "chatMessages",
                   "width": "fill_container",
                   "height": "fill_container",
@@ -2385,7 +2385,7 @@
                   "children": [
                     {
                       "type": "frame",
-                      "id": "GANWl",
+                      "id": "NNSJZ",
                       "name": "userMessage",
                       "width": "fill_container",
                       "fill": "$--accent-primary",
@@ -2396,7 +2396,7 @@
                       "children": [
                         {
                           "type": "text",
-                          "id": "45opr",
+                          "id": "PgK9R",
                           "name": "userTxt1",
                           "fill": "$--text-inverse",
                           "content": "Create a travel guide from this video:",
@@ -2406,7 +2406,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "Ux8jd",
+                          "id": "7WETu",
                           "name": "userTxt2",
                           "fill": "#FFFFFFCC",
                           "content": "https://www.youtube.com/watch?v=IuTDuvYr7f0",
@@ -2418,7 +2418,7 @@
                     },
                     {
                       "type": "frame",
-                      "id": "R2gG4",
+                      "id": "Zudmn",
                       "name": "aiResponse",
                       "width": "fill_container",
                       "layout": "vertical",
@@ -2426,14 +2426,14 @@
                       "children": [
                         {
                           "type": "frame",
-                          "id": "rjwp8",
+                          "id": "KCkgy",
                           "name": "aiHdr",
                           "gap": 8,
                           "alignItems": "center",
                           "children": [
                             {
                               "type": "icon_font",
-                              "id": "Lw1Je",
+                              "id": "Uqxcr",
                               "name": "aiIcn",
                               "width": 16,
                               "height": 16,
@@ -2443,10 +2443,10 @@
                             },
                             {
                               "type": "text",
-                              "id": "zLiKJ",
+                              "id": "7HSJk",
                               "name": "aiLbl",
                               "fill": "$--text-primary",
-                              "content": "Guide Regenerated with Dreamy-Soft Style",
+                              "content": "Guide Generated with Dreamy-Soft Style",
                               "fontFamily": "Inter",
                               "fontSize": 14,
                               "fontWeight": "600"
@@ -2455,7 +2455,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "UA4si",
+                          "id": "SpFlw",
                           "name": "aiMsg1",
                           "fill": "$--text-secondary",
                           "textGrowth": "fixed-width",
@@ -2468,7 +2468,7 @@
                         },
                         {
                           "type": "frame",
-                          "id": "Mg2CA",
+                          "id": "jCHO5",
                           "name": "toolCard1",
                           "width": "fill_container",
                           "fill": "$--bg-secondary",
@@ -2483,7 +2483,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "WdY3m",
+                              "id": "g3DNb",
                               "name": "tc1h",
                               "width": "fill_container",
                               "gap": 8,
@@ -2491,7 +2491,7 @@
                               "children": [
                                 {
                                   "type": "icon_font",
-                                  "id": "Ugcvh",
+                                  "id": "JUBiO",
                                   "name": "tc1i",
                                   "width": 14,
                                   "height": 14,
@@ -2501,7 +2501,7 @@
                                 },
                                 {
                                   "type": "text",
-                                  "id": "I9yno",
+                                  "id": "kXaq4",
                                   "name": "tc1n",
                                   "fill": "$--text-primary",
                                   "content": "parse_youtube_input",
@@ -2511,7 +2511,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "QZsHg",
+                                  "id": "PN56O",
                                   "name": "tc1s",
                                   "fill": "#10B98120",
                                   "cornerRadius": 4,
@@ -2524,7 +2524,7 @@
                                   "children": [
                                     {
                                       "type": "icon_font",
-                                      "id": "SRhIt",
+                                      "id": "eH28S",
                                       "name": "tc1si",
                                       "width": 10,
                                       "height": 10,
@@ -2534,7 +2534,7 @@
                                     },
                                     {
                                       "type": "text",
-                                      "id": "AUxbt",
+                                      "id": "H8L2S",
                                       "name": "tc1st",
                                       "fill": "#10B981",
                                       "content": "Done",
@@ -2548,7 +2548,7 @@
                             },
                             {
                               "type": "text",
-                              "id": "w0m1L",
+                              "id": "jn2zd",
                               "name": "tc1r",
                               "fill": "$--text-tertiary",
                               "content": "Found 1 YouTube URL(s)",
@@ -2560,7 +2560,7 @@
                         },
                         {
                           "type": "text",
-                          "id": "fLl4N",
+                          "id": "pf97r",
                           "name": "aiMsg2",
                           "fill": "$--text-secondary",
                           "textGrowth": "fixed-width",
@@ -2573,7 +2573,7 @@
                         },
                         {
                           "type": "frame",
-                          "id": "SV9BN",
+                          "id": "CJpSJ",
                           "name": "toolCard2",
                           "width": "fill_container",
                           "fill": "$--bg-secondary",
@@ -2588,7 +2588,7 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "19kNA",
+                              "id": "ukdol",
                               "name": "tc2h",
                               "width": "fill_container",
                               "gap": 8,
@@ -2596,7 +2596,7 @@
                               "children": [
                                 {
                                   "type": "icon_font",
-                                  "id": "pkjAr",
+                                  "id": "fMdeA",
                                   "name": "tc2i",
                                   "width": 14,
                                   "height": 14,
@@ -2606,7 +2606,7 @@
                                 },
                                 {
                                   "type": "text",
-                                  "id": "X5W5I",
+                                  "id": "s0CcS",
                                   "name": "tc2n",
                                   "fill": "$--text-primary",
                                   "content": "crawl_youtube_videos",
@@ -2616,7 +2616,7 @@
                                 },
                                 {
                                   "type": "frame",
-                                  "id": "XKmBk",
+                                  "id": "EIMDT",
                                   "name": "tc2s",
                                   "fill": "$--accent-primary-bg",
                                   "cornerRadius": 4,
@@ -2629,7 +2629,7 @@
                                   "children": [
                                     {
                                       "type": "icon_font",
-                                      "id": "XZE1D",
+                                      "id": "YHwi4",
                                       "name": "tc2si",
                                       "width": 10,
                                       "height": 10,
@@ -2639,7 +2639,7 @@
                                     },
                                     {
                                       "type": "text",
-                                      "id": "pYwUm",
+                                      "id": "qBTIp",
                                       "name": "tc2st",
                                       "fill": "$--accent-primary",
                                       "content": "Running",
@@ -2653,7 +2653,7 @@
                             },
                             {
                               "type": "text",
-                              "id": "Gk0y6",
+                              "id": "8UwSj",
                               "name": "tc2r",
                               "fill": "$--text-tertiary",
                               "content": "Gather video basic infomation...",
@@ -2669,7 +2669,7 @@
                 },
                 {
                   "type": "frame",
-                  "id": "fkJ67",
+                  "id": "vW9LN",
                   "name": "chatInput",
                   "width": "fill_container",
                   "stroke": {
@@ -2684,7 +2684,7 @@
                   "children": [
                     {
                       "type": "frame",
-                      "id": "dAugP",
+                      "id": "kOrMu",
                       "name": "inputField",
                       "width": "fill_container",
                       "height": 44,
@@ -2698,7 +2698,7 @@
                       "children": [
                         {
                           "type": "text",
-                          "id": "Bi0Rk",
+                          "id": "cJYlu",
                           "name": "inputPlaceholder",
                           "fill": "$--text-tertiary",
                           "content": "Ask me to refine the guide...",
@@ -2710,7 +2710,7 @@
                     },
                     {
                       "type": "frame",
-                      "id": "Go7x3",
+                      "id": "DRJtm",
                       "name": "sendBtn",
                       "width": 44,
                       "height": 44,
@@ -2721,7 +2721,7 @@
                       "children": [
                         {
                           "type": "icon_font",
-                          "id": "a4121",
+                          "id": "KcNo1",
                           "name": "sendIcon",
                           "width": 18,
                           "height": 18,
@@ -3827,7 +3827,7 @@
               "id": "BHJgy",
               "name": "presetLabelC",
               "fill": "$--text-primary",
-              "content": "Authentic presets",
+              "content": "Aesthetic presets",
               "fontFamily": "Inter",
               "fontSize": 15,
               "fontWeight": "600"
@@ -4623,10 +4623,10 @@
     {
       "type": "frame",
       "id": "UMppZ",
-      "x": 755,
+      "x": 891,
       "y": -574,
       "name": "version-control",
-      "width": "fill_container(592)",
+      "width": "fill_container(456)",
       "gap": 10,
       "padding": [
         0,
@@ -5144,6 +5144,461 @@
                   "fontFamily": "Inter",
                   "fontSize": 13,
                   "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "J48yr",
+      "x": 1157,
+      "y": 683,
+      "name": "chat-panel",
+      "width": 380,
+      "height": "fill_container(900)",
+      "fill": "$--bg-elevated",
+      "stroke": {
+        "thickness": 0,
+        "fill": "transparent"
+      },
+      "children": [
+        {
+          "type": "frame",
+          "id": "wpZ4H",
+          "name": "resizeHandle",
+          "width": 8,
+          "height": "fill_container",
+          "stroke": {
+            "thickness": {
+              "left": 1
+            },
+            "fill": "$--border-light"
+          },
+          "layout": "vertical",
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "BveL9",
+              "name": "resizeBar",
+              "width": 4,
+              "height": 40,
+              "fill": "$--border-default",
+              "cornerRadius": 2
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "a6doj",
+          "name": "chatContent",
+          "width": "fill_container",
+          "height": "fill_container",
+          "fill": "$--bg-elevated",
+          "layout": "vertical",
+          "children": [
+            {
+              "type": "frame",
+              "id": "cbc75",
+              "name": "chatHeader",
+              "width": "fill_container",
+              "stroke": {
+                "thickness": {
+                  "bottom": 1
+                },
+                "fill": "$--border-light"
+              },
+              "layout": "vertical",
+              "gap": 4,
+              "padding": [
+                20,
+                20,
+                16,
+                20
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "yC9wS",
+                  "name": "chatTtl",
+                  "fill": "$--text-primary",
+                  "content": "A Solo Journey Through Kyoto: Cafes...",
+                  "fontFamily": "Inter",
+                  "fontSize": 15,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "0D26c",
+                  "name": "chatTtl",
+                  "fill": "$--text-tertiary",
+                  "content": "Completed 2/7 steps",
+                  "fontFamily": "Inter",
+                  "fontSize": 12,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "83wkJ",
+              "name": "chatMessages",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 16,
+              "padding": 16,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "GANWl",
+                  "name": "userMessage",
+                  "width": "fill_container",
+                  "fill": "$--accent-primary",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "45opr",
+                      "name": "userTxt1",
+                      "fill": "$--text-inverse",
+                      "content": "Create a travel guide from this video:",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "500"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Ux8jd",
+                      "name": "userTxt2",
+                      "fill": "#FFFFFFCC",
+                      "content": "https://www.youtube.com/watch?v=IuTDuvYr7f0",
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "R2gG4",
+                  "name": "aiResponse",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "rjwp8",
+                      "name": "aiHdr",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "Lw1Je",
+                          "name": "aiIcn",
+                          "width": 16,
+                          "height": 16,
+                          "iconFontName": "sparkles",
+                          "iconFontFamily": "lucide",
+                          "fill": "$--accent-primary"
+                        },
+                        {
+                          "type": "text",
+                          "id": "zLiKJ",
+                          "name": "aiLbl",
+                          "fill": "$--text-primary",
+                          "content": "Guide Regenerated with Dreamy-Soft Style",
+                          "fontFamily": "Inter",
+                          "fontSize": 14,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "UA4si",
+                      "name": "aiMsg1",
+                      "fill": "$--text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Let me extract the transcript from your video first...",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Mg2CA",
+                      "name": "toolCard1",
+                      "width": "fill_container",
+                      "fill": "$--bg-secondary",
+                      "cornerRadius": 10,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$--border-light"
+                      },
+                      "layout": "vertical",
+                      "gap": 8,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "WdY3m",
+                          "name": "tc1h",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "Ugcvh",
+                              "name": "tc1i",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "file-text",
+                              "iconFontFamily": "lucide",
+                              "fill": "$--text-secondary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "I9yno",
+                              "name": "tc1n",
+                              "fill": "$--text-primary",
+                              "content": "parse_youtube_input",
+                              "fontFamily": "JetBrains Mono",
+                              "fontSize": 11,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "QZsHg",
+                              "name": "tc1s",
+                              "fill": "#10B98120",
+                              "cornerRadius": 4,
+                              "gap": 4,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "SRhIt",
+                                  "name": "tc1si",
+                                  "width": 10,
+                                  "height": 10,
+                                  "iconFontName": "check",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "#10B981"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "AUxbt",
+                                  "name": "tc1st",
+                                  "fill": "#10B981",
+                                  "content": "Done",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 10,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "w0m1L",
+                          "name": "tc1r",
+                          "fill": "$--text-tertiary",
+                          "content": "Found 1 YouTube URL(s)",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "fLl4N",
+                      "name": "aiMsg2",
+                      "fill": "$--text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "Great! Now I'm generating your guide with the dreamy-soft aesthetic...",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "SV9BN",
+                      "name": "toolCard2",
+                      "width": "fill_container",
+                      "fill": "$--bg-secondary",
+                      "cornerRadius": 10,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "$--accent-primary"
+                      },
+                      "layout": "vertical",
+                      "gap": 8,
+                      "padding": 12,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "19kNA",
+                          "name": "tc2h",
+                          "width": "fill_container",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "pkjAr",
+                              "name": "tc2i",
+                              "width": 14,
+                              "height": 14,
+                              "iconFontName": "code",
+                              "iconFontFamily": "lucide",
+                              "fill": "$--text-secondary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "X5W5I",
+                              "name": "tc2n",
+                              "fill": "$--text-primary",
+                              "content": "crawl_youtube_videos",
+                              "fontFamily": "JetBrains Mono",
+                              "fontSize": 11,
+                              "fontWeight": "500"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "XKmBk",
+                              "name": "tc2s",
+                              "fill": "$--accent-primary-bg",
+                              "cornerRadius": 4,
+                              "gap": 4,
+                              "padding": [
+                                2,
+                                8
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon_font",
+                                  "id": "XZE1D",
+                                  "name": "tc2si",
+                                  "width": 10,
+                                  "height": 10,
+                                  "iconFontName": "loader",
+                                  "iconFontFamily": "lucide",
+                                  "fill": "$--accent-primary"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "pYwUm",
+                                  "name": "tc2st",
+                                  "fill": "$--accent-primary",
+                                  "content": "Running",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 10,
+                                  "fontWeight": "500"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "Gk0y6",
+                          "name": "tc2r",
+                          "fill": "$--text-tertiary",
+                          "content": "Gather video basic infomation...",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "fkJ67",
+              "name": "chatInput",
+              "width": "fill_container",
+              "stroke": {
+                "thickness": {
+                  "top": 1
+                },
+                "fill": "$--border-light"
+              },
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "dAugP",
+                  "name": "inputField",
+                  "width": "fill_container",
+                  "height": 44,
+                  "fill": "$--bg-secondary",
+                  "cornerRadius": 12,
+                  "padding": [
+                    0,
+                    16
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Bi0Rk",
+                      "name": "inputPlaceholder",
+                      "fill": "$--text-tertiary",
+                      "content": "Ask me to refine the guide...",
+                      "fontFamily": "Inter",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ujIM1",
+                  "name": "stopBtn",
+                  "width": 44,
+                  "height": 44,
+                  "fill": "$--border-default",
+                  "cornerRadius": 12,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "AqM63",
+                      "name": "stopSquare",
+                      "width": 14,
+                      "height": 14,
+                      "fill": "$--text-tertiary",
+                      "cornerRadius": 2
+                    }
+                  ]
                 }
               ]
             }

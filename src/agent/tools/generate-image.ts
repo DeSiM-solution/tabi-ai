@@ -6,8 +6,10 @@ import { getDurationMs } from '@/agent/context/utils';
 import { handbookGenerateImagePlanPrompt } from '@/agent/prompts/image-query-planning';
 import { handbookImageAssetSchema, handbookImagePlanSchema, MAX_HANDBOOK_IMAGES } from './types';
 import {
+  computeImageCoverageMetrics,
   generateHandbookImageByPrompt,
   getImageTargetBlocks,
+  resolveImageTargetLimit,
   validateHandbookImagePlan,
 } from './shared';
 
@@ -28,10 +30,11 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           );
         }
 
-        const targetBlocks = getImageTargetBlocks(
-          sourceBlocks,
-          Math.min(count ?? MAX_HANDBOOK_IMAGES, MAX_HANDBOOK_IMAGES),
-        );
+        const targetLimit = resolveImageTargetLimit({
+          sourceBlockCount: sourceBlocks.length,
+          requestedCount: count ?? null,
+        });
+        const targetBlocks = getImageTargetBlocks(sourceBlocks, targetLimit);
         if (targetBlocks.length === 0) {
           throw new Error('No eligible blocks found for image generation.');
         }
@@ -78,6 +81,14 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
 
         ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(images);
         ctx.runtime.latestImageMode = 'generate_image';
+        const coverageMetrics = computeImageCoverageMetrics(
+          targetBlocks.length,
+          ctx.runtime.latestHandbookImages.length,
+        );
+        const fullCoverageMetrics = computeImageCoverageMetrics(
+          sourceBlocks.length,
+          ctx.runtime.latestHandbookImages.length,
+        );
 
         const imageRefs = ctx.runtime.latestHandbookImages.map(image => ({
           block_id: image.block_id,
@@ -92,12 +103,26 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           planner_model: plannerModel,
           generation_models: [...imageModelsUsed],
           image_count: ctx.runtime.latestHandbookImages.length,
+          full_block_count: sourceBlocks.length,
+          full_required_image_count: fullCoverageMetrics.required_image_count,
+          full_matched_image_count: ctx.runtime.latestHandbookImages.length,
+          full_coverage_ratio: fullCoverageMetrics.coverage_ratio,
+          full_pass_75:
+            ctx.runtime.latestHandbookImages.length >=
+            fullCoverageMetrics.required_image_count,
+          ...coverageMetrics,
           image_refs: imageRefs,
         };
 
         console.log('[generate_image] success', {
           durationMs: getDurationMs(startedAt),
           imageCount: ctx.runtime.latestHandbookImages.length,
+          targetBlockCount: coverageMetrics.target_block_count,
+          requiredImageCount: coverageMetrics.required_image_count,
+          coverageRatio: coverageMetrics.coverage_ratio,
+          fullBlockCount: fullCoverageMetrics.target_block_count,
+          fullRequiredImageCount: fullCoverageMetrics.required_image_count,
+          fullCoverageRatio: fullCoverageMetrics.coverage_ratio,
           plannerModel,
           generationModels: [...imageModelsUsed],
         });

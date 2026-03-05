@@ -12,7 +12,6 @@ import {
 import { toast } from 'sonner';
 import {
   FiArrowRight,
-  FiCheck,
   FiX,
   FiYoutube,
 } from 'react-icons/fi';
@@ -21,12 +20,7 @@ import {
   LuPlus,
 } from 'react-icons/lu';
 import {
-  getHandbookLifecycleLabel,
-  type HandbookLifecycle,
-} from '@/lib/handbook-lifecycle';
-import {
   DEFAULT_HANDBOOK_STYLE,
-  HANDBOOK_STYLE_OPTIONS,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
 import { createSessionId, toSessionTitle } from '@/lib/session-items';
@@ -40,6 +34,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 import { useHydrateSessionsStore } from '@/stores/use-hydrate-sessions-store';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+import { AestheticStyleSelector } from '@/components/aesthetic-style-selector';
 import {
   SessionContextMenu,
   type SessionContextMenuState,
@@ -51,96 +46,6 @@ const EXAMPLE_VIDEOS = [
   { label: '48 Hours in Hiroshima and Miyajima', id: 'ZAmZgQlx_u4' },
   { label: 'How to Spend 4 Days in Osaka', id: 'hWXRiDOFFT0' },
 ] as const;
-const HANDBOOK_LIFECYCLE_OPTIONS: HandbookLifecycle[] = [
-  'DRAFT',
-  'PUBLIC',
-  'ARCHIVED',
-];
-
-function getStyleLabel(styleId: HandbookStyleId): string {
-  if (styleId === 'minimal-tokyo') return 'Minimal\nTokyo';
-  if (styleId === 'warm-analog') return 'Warm\nAnalog';
-  if (styleId === 'dreamy-soft') return 'Dreamy\nSoft';
-  if (styleId === 'let-tabi-decide') return 'Let Tabi\ndecide';
-  return 'Brutalist';
-}
-
-function renderStylePreview(styleId: HandbookStyleId, selected: boolean) {
-  const badge = selected ? (
-    <span className="absolute right-[6px] top-[6px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent-primary text-text-inverse">
-      <FiCheck className="h-3 w-3" />
-    </span>
-  ) : null;
-
-  if (styleId === 'minimal-tokyo') {
-    return (
-      <span className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7] bg-bg-elevated">
-        <span className="absolute left-[5px] top-[5px] grid h-[54px] w-[54px] grid-cols-5 gap-[6px]">
-          {Array.from({ length: 25 }, (_, index) => (
-            <span
-              key={`dot-${index}`}
-              className="h-[6px] w-[6px] rounded-full bg-[#C4C4C4]"
-            />
-          ))}
-        </span>
-        {badge}
-      </span>
-    );
-  }
-
-  if (styleId === 'warm-analog') {
-    return (
-      <span
-        className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
-        style={{
-          background:
-            'linear-gradient(145deg, rgb(254, 247, 230) 0%, rgb(245, 230, 200) 40%, rgb(232, 212, 168) 100%)',
-        }}
-      >
-        {badge}
-      </span>
-    );
-  }
-
-  if (styleId === 'brutalist') {
-    return (
-      <span className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-zinc-900">
-        <span className="block h-[28px] w-[28px] rounded-[6px] bg-rose-500" />
-        {badge}
-      </span>
-    );
-  }
-
-  if (styleId === 'dreamy-soft') {
-    return (
-      <span
-        className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
-        style={{
-          background:
-            'linear-gradient(145deg, rgb(253, 244, 255) 0%, rgb(243, 232, 255) 40%, rgb(233, 213, 255) 100%)',
-        }}
-      >
-        {badge}
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-gradient-to-br from-[var(--tabi-bg-secondary)] via-[var(--tabi-bg-primary)] to-[var(--tabi-border-light)]"
-      style={{
-        ['--tabi-bg-secondary' as string]: '#F5F3EF',
-        ['--tabi-bg-primary' as string]: '#FAFAF8',
-        ['--tabi-border-light' as string]: '#E8E6E3',
-      }}
-    >
-      <span className="block text-[20px] leading-none font-semibold text-[#71717A]">
-        旅
-      </span>
-      {badge}
-    </span>
-  );
-}
 
 function normalizeYoutubeUrl(raw: string): string | null {
   const trimmed = raw.trim();
@@ -208,7 +113,6 @@ export default function Home() {
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(
     null,
   );
-  const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   useHydrateAuthStore();
@@ -394,49 +298,6 @@ export default function Home() {
     sessionsActions.removeSession(deletedSessionId);
   };
 
-  const updateHandbookLifecycle = async (
-    sessionId: string,
-    nextLifecycle: HandbookLifecycle,
-  ) => {
-    if (!sessionId || isUpdatingLifecycle) return;
-    const targetSession = sessionItems.find(item => item.id === sessionId);
-    const previousLifecycle = targetSession?.handbookLifecycle ?? 'DRAFT';
-    if (nextLifecycle === previousLifecycle) return;
-
-    sessionsActions.updateSession(sessionId, {
-      handbookLifecycle: nextLifecycle,
-    });
-    setIsUpdatingLifecycle(true);
-    setContextMenu(null);
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/handbook-lifecycle`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lifecycle: nextLifecycle }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || `Failed to update lifecycle (${response.status})`);
-      }
-      await sessionsActions.hydrateFromServer();
-      toast.success(`Handbook moved to ${getHandbookLifecycleLabel(nextLifecycle)}.`);
-    } catch (error) {
-      sessionsActions.updateSession(sessionId, {
-        handbookLifecycle: previousLifecycle,
-      });
-      console.error('[home-page] update-handbook-lifecycle-failed', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to update handbook lifecycle.');
-    } finally {
-      setIsUpdatingLifecycle(false);
-    }
-  };
-  const contextMenuSession = contextMenu
-    ? (sessionItems.find(item => item.id === contextMenu.sessionId) ?? null)
-    : null;
-  const contextMenuLifecycle = contextMenuSession?.handbookLifecycle ?? 'DRAFT';
-
   return (
     <div className="h-screen overflow-hidden bg-bg-primary text-text-primary">
       <div className="flex h-full flex-col md:flex-row">
@@ -483,14 +344,14 @@ export default function Home() {
 
                   {selectedVideoUrl && (
                     <div className="flex h-[52px] items-center gap-3 rounded-[12px] border border-border-light bg-bg-secondary px-4">
-                      <FiYoutube className="h-5 w-5 shrink-0 text-accent-primary" />
+                      <FiYoutube className="h-5 w-5 shrink-0 text-red-500" />
                       <span className="min-w-0 flex-1 truncate text-left text-[14px] leading-[1.4] text-text-primary">
                         {selectedVideoId ?? selectedVideoUrl}
                       </span>
                       <button
                         type="button"
                         onClick={removeSelectedVideo}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-text-tertiary transition hover:bg-bg-elevated hover:text-text-secondary"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-text-tertiary transition hover:bg-border-light hover:text-text-secondary"
                         aria-label="Remove selected video"
                       >
                         <FiX className="h-4 w-4" />
@@ -549,28 +410,10 @@ export default function Home() {
                     Match your channel&apos;s visual identity
                   </p>
 
-                  <div className="flex flex-nowrap items-start justify-between gap-1">
-                    {HANDBOOK_STYLE_OPTIONS.map(option => {
-                      const selected = selectedStyle === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setSelectedStyle(option.id)}
-                          className="group relative w-[80px] p-0 text-center transition"
-                        >
-                          {renderStylePreview(option.id, selected)}
-                          <span
-                            className={`mt-2 block whitespace-pre-line text-[13px] font-medium leading-[1.25] ${
-                              selected ? 'text-text-primary' : 'text-text-secondary'
-                            }`}
-                          >
-                            {getStyleLabel(option.id)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <AestheticStyleSelector
+                    value={selectedStyle}
+                    onChange={setSelectedStyle}
+                  />
                 </div>
               </div>
 
@@ -593,14 +436,7 @@ export default function Home() {
       <SessionContextMenu
         menu={contextMenu}
         menuRef={menuRef}
-        lifecycle={contextMenuLifecycle}
-        hasContextSession={Boolean(contextMenuSession)}
-        isUpdatingLifecycle={isUpdatingLifecycle}
-        lifecycleOptions={HANDBOOK_LIFECYCLE_OPTIONS}
         onRename={startRenameSession}
-        onLifecycleChange={(sessionId, lifecycle) => {
-          void updateHandbookLifecycle(sessionId, lifecycle);
-        }}
         onDelete={requestDeleteSession}
       />
       <DeleteConfirmationDialog

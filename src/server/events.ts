@@ -173,32 +173,46 @@ export async function failSessionStep(input: {
   errorMessage: string;
   durationMs?: number;
 }): Promise<void> {
-  await db.$transaction([
-    db.sessionStep.updateMany({
-      where: {
-        id: input.stepId,
-        sessionId: input.sessionId,
-      },
-      data: {
-        status: SESSION_STEP_STATUS.ERROR,
-        errorMessage: input.errorMessage,
-        durationMs: input.durationMs ?? null,
-        finishedAt: new Date(),
-      },
-    }),
-    db.session.updateMany({
-      where: {
-        id: input.sessionId,
-        userId: input.userId,
-      },
-      data: {
-        status: SESSION_STATUS.RUNNING,
-        failedStep: input.toolName,
-        currentStep: input.toolName,
-        lastError: input.errorMessage,
-      },
-    }),
-  ]);
+  const finishedAt = new Date();
+  const stepUpdate = {
+    where: {
+      id: input.stepId,
+      sessionId: input.sessionId,
+    },
+    data: {
+      status: SESSION_STEP_STATUS.ERROR,
+      errorMessage: input.errorMessage,
+      durationMs: input.durationMs ?? null,
+      finishedAt,
+    },
+  } as const;
+  const sessionUpdate = {
+    where: {
+      id: input.sessionId,
+      userId: input.userId,
+    },
+    data: {
+      status: SESSION_STATUS.RUNNING,
+      failedStep: input.toolName,
+      currentStep: input.toolName,
+      lastError: input.errorMessage,
+    },
+  } as const;
+
+  try {
+    await db.$transaction([
+      db.sessionStep.updateMany(stepUpdate),
+      db.session.updateMany(sessionUpdate),
+    ]);
+  } catch (error) {
+    console.warn('[events] fail-session-step-transaction-fallback', {
+      sessionId: input.sessionId,
+      stepId: input.stepId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    await db.sessionStep.updateMany(stepUpdate);
+    await db.session.updateMany(sessionUpdate);
+  }
 }
 
 export async function cancelSessionStep(input: {
@@ -207,30 +221,44 @@ export async function cancelSessionStep(input: {
   userId: string;
   durationMs?: number;
 }): Promise<void> {
-  await db.$transaction([
-    db.sessionStep.updateMany({
-      where: {
-        id: input.stepId,
-        sessionId: input.sessionId,
-      },
-      data: {
-        status: SESSION_STEP_STATUS.CANCELLED,
-        durationMs: input.durationMs ?? null,
-        finishedAt: new Date(),
-      },
-    }),
-    db.session.updateMany({
-      where: {
-        id: input.sessionId,
-        userId: input.userId,
-      },
-      data: {
-        status: SESSION_STATUS.CANCELLED,
-        cancelledAt: new Date(),
-        currentStep: null,
-      },
-    }),
-  ]);
+  const now = new Date();
+  const stepUpdate = {
+    where: {
+      id: input.stepId,
+      sessionId: input.sessionId,
+    },
+    data: {
+      status: SESSION_STEP_STATUS.CANCELLED,
+      durationMs: input.durationMs ?? null,
+      finishedAt: now,
+    },
+  } as const;
+  const sessionUpdate = {
+    where: {
+      id: input.sessionId,
+      userId: input.userId,
+    },
+    data: {
+      status: SESSION_STATUS.CANCELLED,
+      cancelledAt: now,
+      currentStep: null,
+    },
+  } as const;
+
+  try {
+    await db.$transaction([
+      db.sessionStep.updateMany(stepUpdate),
+      db.session.updateMany(sessionUpdate),
+    ]);
+  } catch (error) {
+    console.warn('[events] cancel-session-step-transaction-fallback', {
+      sessionId: input.sessionId,
+      stepId: input.stepId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    await db.sessionStep.updateMany(stepUpdate);
+    await db.session.updateMany(sessionUpdate);
+  }
 }
 
 export async function markSessionCompleted(

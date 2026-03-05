@@ -3,19 +3,13 @@
 import type { MouseEvent, RefObject } from 'react';
 import Link from 'next/link';
 import {
-  LuArchive,
   LuClock3,
   LuFileText,
-  LuGlobe,
   LuLoader,
   LuPanelLeftClose,
   LuPanelLeftOpen,
   LuPlus,
 } from 'react-icons/lu';
-import {
-  getHandbookLifecycleLabel,
-  type HandbookLifecycle,
-} from '@/lib/handbook-lifecycle';
 import type { SessionSummary } from '@/stores/sessions-store';
 import { UserCenterPanel } from '@/components/user-center-panel';
 
@@ -41,26 +35,6 @@ interface SessionSidebarProps {
   onRenameDraftChange?: (value: string) => void;
   onRenameSubmit?: (sessionId: string) => void;
   onRenameCancel?: () => void;
-}
-
-function getLifecycleBadgeClassName(lifecycle: HandbookLifecycle): string {
-  if (lifecycle === 'PUBLIC') {
-    return 'bg-emerald-50 text-emerald-700';
-  }
-  if (lifecycle === 'ARCHIVED') {
-    return 'bg-zinc-100 text-zinc-600';
-  }
-  return 'bg-amber-50 text-amber-700';
-}
-
-function renderLifecycleIcon(lifecycle: HandbookLifecycle) {
-  if (lifecycle === 'PUBLIC') {
-    return <LuGlobe className="h-[14px] w-[14px] shrink-0 text-emerald-600" />;
-  }
-  if (lifecycle === 'ARCHIVED') {
-    return <LuArchive className="h-[14px] w-[14px] shrink-0 text-zinc-500" />;
-  }
-  return <LuFileText className="h-[14px] w-[14px] shrink-0 text-amber-600" />;
 }
 
 export function SessionSidebar({
@@ -165,7 +139,11 @@ export function SessionSidebar({
                 const isActive = session.id === activeSessionId;
                 const isLoading = session.status === 'loading';
                 const isRenaming = supportsRename && renamingSessionId === session.id;
-                const sessionLifecycle = session.handbookLifecycle ?? 'DRAFT';
+                const handbookCount = Math.max(0, Math.floor(session.handbookCount ?? 0));
+                const handbookSummary =
+                  handbookCount > 0
+                    ? `${handbookCount} handbook${handbookCount > 1 ? 's' : ''}`
+                    : 'No handbook yet';
                 const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
                   isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
                 }`;
@@ -254,15 +232,8 @@ export function SessionSidebar({
                                   )}
                                   {session.meta}
                                 </span>
-                                <span
-                                  className={`inline-flex h-5 items-center rounded-md px-2 text-[10px] uppercase ${getLifecycleBadgeClassName(
-                                    sessionLifecycle,
-                                  )}`}
-                                >
-                                  <span className="inline-flex items-center gap-1">
-                                    {renderLifecycleIcon(sessionLifecycle)}
-                                    <span>{getHandbookLifecycleLabel(sessionLifecycle)}</span>
-                                  </span>
+                                <span className="text-[10px] text-text-tertiary">
+                                  {handbookSummary}
                                 </span>
                               </span>
                             )}

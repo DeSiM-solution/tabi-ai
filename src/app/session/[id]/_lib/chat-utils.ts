@@ -22,6 +22,14 @@ export interface EditableBlockDraft {
   smart_tags: string[];
   latInput: string;
   lngInput: string;
+  imageUrl: string;
+  imageAlt: string;
+  imageQuery: string;
+  imageSource: 'unsplash' | 'imagen' | '';
+  imageSourcePage: string;
+  imageCredit: string;
+  imageWidth: number | null;
+  imageHeight: number | null;
   newTagInput: string;
 }
 
@@ -44,6 +52,28 @@ type SpotBlockOutput = {
   location: BlockLocation | null;
   smart_tags: string[];
 };
+type BlockImageOutput = {
+  block_id: string;
+  block_title: string;
+  query: string;
+  alt: string;
+  image_url: string;
+  source?: 'unsplash' | 'imagen';
+  source_page: string | null;
+  credit: string | null;
+  width: number | null;
+  height: number | null;
+};
+type BlockImageDraft = {
+  imageUrl: string;
+  imageAlt: string;
+  imageQuery: string;
+  imageSource: 'unsplash' | 'imagen' | '';
+  imageSourcePage: string;
+  imageCredit: string;
+  imageWidth: number | null;
+  imageHeight: number | null;
+};
 
 export type EditedOutputs = Record<string, UnknownRecord>;
 
@@ -55,6 +85,20 @@ export function createBlockId(): string {
 
 export function isRecord(value: unknown): value is UnknownRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function pickOutputString(output: UnknownRecord, keys: string[]): string {
+  for (const key of keys) {
+    const value = readNonEmptyString(output[key]);
+    if (value) return value;
+  }
+  return '';
 }
 
 export function normalizeBlockType(type: unknown): BlockType {
@@ -70,18 +114,80 @@ export function normalizeLocation(value: unknown): BlockLocation | null {
   return { lat, lng };
 }
 
-function toEditableBlockDraft(rawBlock: unknown, index: number): EditableBlockDraft {
+function normalizeImageSource(source: unknown): 'unsplash' | 'imagen' | '' {
+  return source === 'unsplash' || source === 'imagen' ? source : '';
+}
+
+function normalizeImageDimension(value: unknown): number | null {
+  if (typeof value !== 'number') return null;
+  return Number.isFinite(value) ? value : null;
+}
+
+function createEmptyBlockImageDraft(): BlockImageDraft {
+  return {
+    imageUrl: '',
+    imageAlt: '',
+    imageQuery: '',
+    imageSource: '',
+    imageSourcePage: '',
+    imageCredit: '',
+    imageWidth: null,
+    imageHeight: null,
+  };
+}
+
+function getOutputImagesByBlockId(output: UnknownRecord): Map<string, BlockImageDraft> {
+  const rawImages = Array.isArray(output.images)
+    ? output.images
+    : Array.isArray(output.image_refs)
+      ? output.image_refs
+      : [];
+  const imageByBlockId = new Map<string, BlockImageDraft>();
+
+  for (const rawImage of rawImages) {
+    if (!isRecord(rawImage)) continue;
+    const blockId =
+      typeof rawImage.block_id === 'string' ? rawImage.block_id.trim() : '';
+    if (!blockId) continue;
+
+    imageByBlockId.set(blockId, {
+      imageUrl:
+        typeof rawImage.image_url === 'string'
+          ? rawImage.image_url.trim()
+          : '',
+      imageAlt: typeof rawImage.alt === 'string' ? rawImage.alt.trim() : '',
+      imageQuery:
+        typeof rawImage.query === 'string' ? rawImage.query.trim() : '',
+      imageSource: normalizeImageSource(rawImage.source),
+      imageSourcePage:
+        typeof rawImage.source_page === 'string' ? rawImage.source_page.trim() : '',
+      imageCredit: typeof rawImage.credit === 'string' ? rawImage.credit.trim() : '',
+      imageWidth: normalizeImageDimension(rawImage.width),
+      imageHeight: normalizeImageDimension(rawImage.height),
+    });
+  }
+
+  return imageByBlockId;
+}
+
+function toEditableBlockDraft(
+  rawBlock: unknown,
+  index: number,
+  imageByBlockId?: Map<string, BlockImageDraft>,
+): EditableBlockDraft {
   const block = isRecord(rawBlock) ? rawBlock : {};
   const location = normalizeLocation(block.location);
   const smartTags = Array.isArray(block.smart_tags)
     ? block.smart_tags.filter(tag => typeof tag === 'string')
     : [];
+  const normalizedBlockId =
+    typeof block.block_id === 'string' && block.block_id.trim()
+      ? block.block_id.trim()
+      : createBlockId();
+  const imageDraft = imageByBlockId?.get(normalizedBlockId) ?? createEmptyBlockImageDraft();
 
   return {
-    block_id:
-      typeof block.block_id === 'string' && block.block_id.trim()
-        ? block.block_id.trim()
-        : createBlockId(),
+    block_id: normalizedBlockId,
     type: normalizeBlockType(block.type),
     title:
       typeof block.title === 'string' && block.title.trim()
@@ -93,6 +199,14 @@ function toEditableBlockDraft(rawBlock: unknown, index: number): EditableBlockDr
     smart_tags: smartTags,
     latInput: location ? String(location.lat) : '',
     lngInput: location ? String(location.lng) : '',
+    imageUrl: imageDraft.imageUrl,
+    imageAlt: imageDraft.imageAlt,
+    imageQuery: imageDraft.imageQuery,
+    imageSource: imageDraft.imageSource,
+    imageSourcePage: imageDraft.imageSourcePage,
+    imageCredit: imageDraft.imageCredit,
+    imageWidth: imageDraft.imageWidth,
+    imageHeight: imageDraft.imageHeight,
     newTagInput: '',
   };
 }
@@ -129,6 +243,31 @@ function toSpotBlocks(blocks: SavedBlockOutput[]): SpotBlockOutput[] {
       location: block.location,
       smart_tags: block.smart_tags,
     }));
+}
+
+function toBlockImages(blocks: SavedBlockOutput[], drafts: EditableBlockDraft[]): BlockImageOutput[] {
+  return blocks.flatMap((block, index) => {
+    const draft = drafts[index];
+    if (!draft) return [];
+    const imageUrl = draft.imageUrl.trim();
+    if (!imageUrl) return [];
+
+    const source = normalizeImageSource(draft.imageSource);
+    return [
+      {
+        block_id: block.block_id,
+        block_title: block.title,
+        query: draft.imageQuery.trim() || block.title,
+        alt: draft.imageAlt.trim() || block.title,
+        image_url: imageUrl,
+        ...(source ? { source } : {}),
+        source_page: draft.imageSourcePage.trim() || null,
+        credit: draft.imageCredit.trim() || null,
+        width: draft.imageWidth,
+        height: draft.imageHeight,
+      },
+    ];
+  });
 }
 
 function getSpotQueryByBlockId(output: UnknownRecord): Map<string, string> {
@@ -183,23 +322,30 @@ export function createEditorSession(
   if (!isRecord(output)) return null;
   if (!Array.isArray(output.blocks)) return null;
 
-  const blocks = output.blocks.map(toEditableBlockDraft);
+  const imageByBlockId = getOutputImagesByBlockId(output);
+  const blocks = output.blocks.map((block, index) =>
+    toEditableBlockDraft(block, index, imageByBlockId),
+  );
 
   return {
     sourceKey,
     toolName,
     originalOutput: output,
-    title: typeof output.title === 'string' ? output.title : '',
-    videoId: typeof output.videoId === 'string' ? output.videoId : '',
-    videoUrl: typeof output.videoUrl === 'string' ? output.videoUrl : '',
-    thumbnailUrl:
-      typeof output.thumbnailUrl === 'string' ? output.thumbnailUrl : '',
+    title: pickOutputString(output, ['title', 'guideTitle', 'guide_title']),
+    videoId: pickOutputString(output, ['videoId', 'video_id']),
+    videoUrl: pickOutputString(output, ['videoUrl', 'video_url']),
+    thumbnailUrl: pickOutputString(output, [
+      'thumbnailUrl',
+      'coverImageUrl',
+      'cover_image_url',
+    ]),
     blocks,
   };
 }
 
 export function applyEditorSession(session: EditorSession): UnknownRecord {
   const blocks = session.blocks.map(toBlockOutput);
+  const images = toBlockImages(blocks, session.blocks);
   const { spotBlocks, spotsWithCoordinates, resolvedCount, unresolvedCount } =
     deriveSpotCoordinateStats(blocks, session.originalOutput);
 
@@ -208,11 +354,22 @@ export function applyEditorSession(session: EditorSession): UnknownRecord {
     videoId: session.videoId,
     videoUrl: session.videoUrl,
     thumbnailUrl: session.thumbnailUrl,
+    coverImageUrl: session.thumbnailUrl,
     title: session.title,
+    guideTitle: session.title,
     blockCount: blocks.length,
     blocks,
     spot_blocks: spotBlocks,
     spotCount: spotBlocks.length,
+    images,
+    image_count: images.length,
+    image_refs: images.map(image => ({
+      block_id: image.block_id,
+      block_title: image.block_title,
+      alt: image.alt,
+      source: image.source ?? '',
+      credit: image.credit,
+    })),
   };
 
   if (session.toolName === 'build_travel_blocks') {
@@ -411,7 +568,7 @@ function getStringField(output: unknown, field: string): string | null {
 
 function getBlocksFromOutput(output: unknown): SavedBlockOutput[] {
   if (!isRecord(output) || !Array.isArray(output.blocks)) return [];
-  return output.blocks.map(toEditableBlockDraft).map(toBlockOutput);
+  return output.blocks.map((block, index) => toEditableBlockDraft(block, index)).map(toBlockOutput);
 }
 
 function getSpotResolvedCounts(output: unknown): {
@@ -485,10 +642,65 @@ export function getToolJsonPanel(
       mode: typeof output.mode === 'string' ? output.mode : toolName,
       image_count:
         typeof output.image_count === 'number' ? output.image_count : images.length,
+      plan_image_count:
+        typeof output.plan_image_count === 'number' ? output.plan_image_count : null,
+      planner_coverage_ratio:
+        typeof output.planner_coverage_ratio === 'number'
+          ? output.planner_coverage_ratio
+          : null,
+      target_block_count:
+        typeof output.target_block_count === 'number'
+          ? output.target_block_count
+          : null,
+      required_image_count:
+        typeof output.required_image_count === 'number'
+          ? output.required_image_count
+          : null,
+      coverage_ratio:
+        typeof output.coverage_ratio === 'number' ? output.coverage_ratio : null,
+      full_block_count:
+        typeof output.full_block_count === 'number' ? output.full_block_count : null,
+      full_required_image_count:
+        typeof output.full_required_image_count === 'number'
+          ? output.full_required_image_count
+          : null,
+      full_matched_image_count:
+        typeof output.full_matched_image_count === 'number'
+          ? output.full_matched_image_count
+          : null,
+      full_coverage_ratio:
+        typeof output.full_coverage_ratio === 'number'
+          ? output.full_coverage_ratio
+          : null,
+      full_pass_75:
+        typeof output.full_pass_75 === 'boolean' ? output.full_pass_75 : null,
+      unsplash_matched_count:
+        typeof output.unsplash_matched_count === 'number'
+          ? output.unsplash_matched_count
+          : null,
+      fallback_generated_count:
+        typeof output.fallback_generated_count === 'number'
+          ? output.fallback_generated_count
+          : null,
+      coverage_gate_triggered:
+        typeof output.coverage_gate_triggered === 'boolean'
+          ? output.coverage_gate_triggered
+          : null,
+      coverage_backfill_gap:
+        typeof output.coverage_backfill_gap === 'number'
+          ? output.coverage_backfill_gap
+          : null,
+      coverage_backfill_added_count:
+        typeof output.coverage_backfill_added_count === 'number'
+          ? output.coverage_backfill_added_count
+          : null,
       planner_model:
         typeof output.planner_model === 'string' ? output.planner_model : null,
       generation_models: Array.isArray(output.generation_models)
         ? output.generation_models
+        : [],
+      block_attempts: Array.isArray(output.block_attempts)
+        ? output.block_attempts.slice(0, 8)
         : [],
       images,
     };

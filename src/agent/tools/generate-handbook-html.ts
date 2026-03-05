@@ -5,6 +5,7 @@ import {
   getHandbookStyleLabel,
   normalizeHandbookStyle,
 } from '@/lib/handbook-style';
+import { createSessionHandbook } from '@/server/sessions';
 import { persistSessionSnapshot } from '@/agent/context/persistence';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
@@ -56,6 +57,13 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
             : ctx.runtime.latestSpotBlocks.length > 0
               ? ctx.runtime.latestSpotBlocks
               : getSpotBlocks(effectiveBlocks);
+        const fallbackThumbnailUrl = normalizeThumbnailUrl(input.thumbnailUrl)
+          ?? ctx.runtime.latestVideoContext?.thumbnailUrl
+          ?? null;
+
+        // Keep latest editable blocks in runtime even if later image resolution fails.
+        ctx.runtime.latestBlocks = effectiveBlocks;
+        ctx.runtime.latestSpotBlocks = spotBlocks;
 
         const runtimeImageByBlockId = new Map(
           ctx.runtime.latestHandbookImages.map(image => [image.block_id, image]),
@@ -86,13 +94,29 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           })
           .filter((image): image is NormalizedHandbookImage => image !== null);
 
-        const preparedImages =
+        let preparedImages =
           normalizedInputImages.length > 0
             ? handbookImageAssetSchema.array().parse(normalizedInputImages)
             : ctx.runtime.latestHandbookImages;
+        if ((!preparedImages || preparedImages.length === 0) && fallbackThumbnailUrl) {
+          preparedImages = handbookImageAssetSchema.array().parse(
+            effectiveBlocks.map(block => ({
+              block_id: block.block_id,
+              block_title: block.title,
+              query: `${block.title} travel`,
+              alt: block.title || 'Travel image',
+              image_url: fallbackThumbnailUrl,
+              source: 'unsplash',
+              source_page: null,
+              credit: null,
+              width: null,
+              height: null,
+            })),
+          );
+        }
         if (!preparedImages || preparedImages.length === 0) {
           throw new Error(
-            'No prepared images found. Call search_image or generate_image before generate_handbook_html.',
+            'No prepared images found. Call search_image or generate_image before generate_handbook_html, or provide thumbnailUrl fallback.',
           );
         }
 
@@ -129,8 +153,6 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           image: promptImageByBlockId.get(block.block_id) ?? null,
         }));
 
-        ctx.runtime.latestBlocks = effectiveBlocks;
-        ctx.runtime.latestSpotBlocks = spotBlocks;
         const handbookStyle =
           normalizeHandbookStyle(input.handbookStyle) ??
           ctx.runtime.latestHandbookStyle ??
@@ -221,10 +243,30 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
 
         ctx.runtime.latestHandbookHtml = html;
         ctx.runtime.requestHasGeneratedHandbook = true;
+        let handbookId: string | null = null;
         if (ctx.sessionId && ctx.userId) {
-          await persistSessionSnapshot(ctx.sessionId, ctx.userId, ctx.runtime, {
-            incrementHandbookVersion: true,
+          const createdHandbook = await createSessionHandbook(ctx.sessionId, ctx.userId, {
+            title: resolvedTitle,
+            html,
+            lifecycle: 'DRAFT',
+            previewPath: null,
+            sourceContext: {
+              video: ctx.runtime.latestVideoContext,
+              apifyVideos: ctx.runtime.latestApifyVideos,
+              handbookStyle,
+              handbookStyleLabel,
+            },
+            sourceBlocks: effectiveBlocks,
+            sourceSpotBlocks: spotBlocks,
+            sourceToolOutputs: ctx.runtime.latestToolOutputs,
+            style: handbookStyle,
+            thumbnailUrl: resolvedThumbnailUrl,
+            generatedAt: new Date(),
+            setActive: true,
           });
+          handbookId = createdHandbook?.id ?? null;
+
+          await persistSessionSnapshot(ctx.sessionId, ctx.userId, ctx.runtime);
         }
 
         const inlineHtmlLimitRaw = Number(process.env.HANDBOOK_INLINE_HTML_MAX_CHARS ?? 180_000);
@@ -251,7 +293,12 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           generated_at: new Date().toISOString(),
           html_length: html.length,
           html_included: includeInlineHtml,
-          preview_url: ctx.sessionId ? `/api/guide/${ctx.sessionId}` : null,
+          handbook_id: handbookId,
+          preview_url: handbookId
+            ? `/api/guide/${handbookId}`
+            : ctx.sessionId
+              ? `/api/guide/${ctx.sessionId}`
+              : null,
           html: includeInlineHtml ? html : undefined,
         };
 
@@ -271,6 +318,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           image_mode: handbookResult.image_mode,
           handbook_style: handbookResult.handbook_style,
           html_length: handbookResult.html_length,
+          handbook_id: handbookResult.handbook_id,
           preview_url: handbookResult.preview_url,
         });
 

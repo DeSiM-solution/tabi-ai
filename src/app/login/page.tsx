@@ -146,10 +146,10 @@ function LoginPageContent() {
             </a>
             <a
               href={toOAuthStartPath('github')}
-              onClick={event => {
-                event.preventDefault();
-                notifyComingSoon();
-              }}
+              // onClick={event => {
+              //   event.preventDefault();
+              //   notifyComingSoon();
+              // }}
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
             >
               <LuGithub className="h-4 w-4" />

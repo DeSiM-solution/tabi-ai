@@ -8,10 +8,12 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   LuArrowRight,
+  LuChevronDown,
   LuCheck,
   LuLoader,
   LuRefreshCw,
   LuSendHorizontal,
+  LuTrash2,
 } from 'react-icons/lu';
 import { BlockEditorWorkspace } from './_components/block-editor-workspace';
 import { MessageContent } from './_components/message-content';
@@ -42,16 +44,22 @@ import {
   useSessionStore,
 } from '@/stores/session-store';
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
+import {
+  handbooksActions,
+  handbooksStore,
+  useSessionHandbooksState,
+} from '@/stores/handbooks-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
 import { formatSessionDate } from '@/lib/session-time';
 import {
-  HANDBOOK_STYLE_OPTIONS,
   getHandbookStyleInstruction,
   getHandbookStyleLabel,
   normalizeHandbookStyle,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
+import { AestheticStyleSelector } from '@/components/aesthetic-style-selector';
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 
 const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
   'build_travel_blocks',
@@ -59,94 +67,6 @@ const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
 ]);
 function toStyleSelection(value: HandbookStyleId | null | undefined): HandbookStyleId {
   return value ?? 'minimal-tokyo';
-}
-
-function getStyleSelectionLabel(styleId: HandbookStyleId): string {
-  if (styleId === 'minimal-tokyo') return 'Minimal\nTokyo';
-  if (styleId === 'warm-analog') return 'Warm\nAnalog';
-  if (styleId === 'brutalist') return 'Brutalist';
-  if (styleId === 'dreamy-soft') return 'Dreamy\nSoft';
-  return 'Let Tabi\ndecide';
-}
-
-function renderStyleSelectionPreview(
-  preset: HandbookStyleId,
-  selected: boolean,
-) {
-  const badge = selected ? (
-    <span className="absolute right-[6px] top-[6px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent-primary text-text-inverse">
-      <LuCheck className="h-3 w-3" />
-    </span>
-  ) : null;
-
-  if (preset === 'minimal-tokyo') {
-    return (
-      <span className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7] bg-bg-elevated">
-        <span className="absolute left-[5px] top-[5px] grid h-[54px] w-[54px] grid-cols-5 gap-[6px]">
-          {Array.from({ length: 25 }, (_, index) => (
-            <span
-              key={`dot-${index}`}
-              className="h-[6px] w-[6px] rounded-full bg-[#C4C4C4]"
-            />
-          ))}
-        </span>
-        {badge}
-      </span>
-    );
-  }
-
-  if (preset === 'brutalist') {
-    return (
-      <span className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-zinc-900">
-        <span className="block h-[28px] w-[28px] rounded-[6px] bg-rose-500" />
-        {badge}
-      </span>
-    );
-  }
-
-  if (preset === 'dreamy-soft') {
-    return (
-      <span
-        className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
-        style={{
-          background:
-            'linear-gradient(145deg, rgb(253, 244, 255) 0%, rgb(243, 232, 255) 40%, rgb(233, 213, 255) 100%)',
-        }}
-      >
-        {badge}
-      </span>
-    );
-  }
-
-  if (preset === 'let-tabi-decide') {
-    return (
-      <span
-        className="relative mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-[24px] border-2 border-[#E4E4E7] bg-gradient-to-br from-[var(--tabi-bg-secondary)] via-[var(--tabi-bg-primary)] to-[var(--tabi-border-light)]"
-        style={{
-          ['--tabi-bg-secondary' as string]: '#F5F3EF',
-          ['--tabi-bg-primary' as string]: '#FAFAF8',
-          ['--tabi-border-light' as string]: '#E8E6E3',
-        }}
-      >
-        <span className="block text-[20px] leading-none font-semibold text-[#71717A]">
-          旅
-        </span>
-        {badge}
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className="relative mx-auto block h-[68px] w-[68px] rounded-[24px] border-2 border-[#E4E4E7]"
-      style={{
-        background:
-          'linear-gradient(145deg, rgb(254, 247, 230) 0%, rgb(245, 230, 200) 40%, rgb(232, 212, 168) 100%)',
-      }}
-    >
-      {badge}
-    </span>
-  );
 }
 
 type SessionHydrationPayload = {
@@ -157,8 +77,6 @@ type SessionHydrationPayload = {
       blocks?: unknown;
       spotBlocks?: unknown;
       toolOutputs?: unknown;
-      handbookHtml?: string | null;
-      previewPath?: string | null;
     } | null;
   };
 };
@@ -191,21 +109,21 @@ async function fetchSessionHydrationPayload(
   return wrapped;
 }
 
-function toGuidePreviewPath(path: string, sessionId: string): string {
+function toGuidePreviewPath(path: string, fallbackHandbookId: string): string {
   const normalized = path.split('?')[0] ?? path;
   if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
     try {
       const url = new URL(normalized);
       if (url.pathname.startsWith('/api/handbook/')) {
-        return `/api/guide/${sessionId}`;
+        return `/api/guide/${fallbackHandbookId}`;
       }
-      return url.pathname || `/api/guide/${sessionId}`;
+      return url.pathname || `/api/guide/${fallbackHandbookId}`;
     } catch {
-      return `/api/guide/${sessionId}`;
+      return `/api/guide/${fallbackHandbookId}`;
     }
   }
   if (normalized.startsWith('/api/handbook/')) {
-    return `/api/guide/${sessionId}`;
+    return `/api/guide/${fallbackHandbookId}`;
   }
   return normalized;
 }
@@ -223,6 +141,205 @@ function toPreviewAddress(previewUrl: string | null, fallbackPath: string): stri
   return normalized || fallbackPath;
 }
 
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function pickPreferredString(...values: unknown[]): string {
+  for (const value of values) {
+    const next = readNonEmptyString(value);
+    if (next) return next;
+  }
+  return '';
+}
+
+function extractSessionTitleFromToolOutput(
+  toolName: string,
+  output: unknown,
+): string | null {
+  if (!isRecord(output)) return null;
+
+  const readDirectTitle = (): string | null =>
+    readNonEmptyString(output.title)
+    ?? readNonEmptyString(output.guideTitle)
+    ?? readNonEmptyString(output.guide_title);
+
+  if (
+    toolName === 'build_travel_blocks'
+    || toolName === 'resolve_spot_coordinates'
+    || toolName === 'generate_handbook_html'
+  ) {
+    return readDirectTitle();
+  }
+
+  if (toolName !== 'crawl_youtube_videos') return null;
+
+  const directTitle = readDirectTitle();
+  if (directTitle) return directTitle;
+
+  const rawVideos = Array.isArray(output.videos) ? output.videos : [];
+  for (const rawVideo of rawVideos) {
+    if (!isRecord(rawVideo)) continue;
+    const title =
+      readNonEmptyString(rawVideo.title)
+      ?? readNonEmptyString(rawVideo.translatedTitle)
+      ?? null;
+    if (title) return title;
+  }
+
+  return null;
+}
+
+type NormalizedHandbookImage = {
+  block_id: string;
+  block_title: string;
+  query: string;
+  alt: string;
+  image_url: string;
+  source?: 'unsplash' | 'imagen';
+  source_page: string | null;
+  credit: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+function normalizeHandbookImageRecord(value: unknown): NormalizedHandbookImage | null {
+  if (!isRecord(value)) return null;
+  const blockId =
+    typeof value.block_id === 'string' ? value.block_id.trim() : '';
+  const imageUrl =
+    typeof value.image_url === 'string' ? value.image_url.trim() : '';
+  if (!blockId || !imageUrl) return null;
+
+  const source =
+    value.source === 'unsplash' || value.source === 'imagen'
+      ? value.source
+      : undefined;
+  const width =
+    typeof value.width === 'number' && Number.isFinite(value.width)
+      ? value.width
+      : null;
+  const height =
+    typeof value.height === 'number' && Number.isFinite(value.height)
+      ? value.height
+      : null;
+
+  return {
+    block_id: blockId,
+    block_title:
+      typeof value.block_title === 'string' ? value.block_title.trim() : '',
+    query: typeof value.query === 'string' ? value.query.trim() : '',
+    alt: typeof value.alt === 'string' ? value.alt.trim() : '',
+    image_url: imageUrl,
+    ...(source ? { source } : {}),
+    source_page:
+      typeof value.source_page === 'string' ? value.source_page.trim() : null,
+    credit: typeof value.credit === 'string' ? value.credit.trim() : null,
+    width,
+    height,
+  };
+}
+
+function normalizeHandbookImageArray(value: unknown): NormalizedHandbookImage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(normalizeHandbookImageRecord)
+    .filter((image): image is NormalizedHandbookImage => image !== null);
+}
+
+function normalizeEditableImageSource(value: unknown): 'unsplash' | 'imagen' | '' {
+  return value === 'unsplash' || value === 'imagen' ? value : '';
+}
+
+function extractContextHandbookImages(context: unknown): NormalizedHandbookImage[] {
+  if (!isRecord(context)) return [];
+  const camelCaseImages = normalizeHandbookImageArray(context.handbookImages);
+  if (camelCaseImages.length > 0) return camelCaseImages;
+  return normalizeHandbookImageArray(context.handbook_images);
+}
+
+function hasOutputImageUrls(output: UnknownRecord): boolean {
+  if (!Array.isArray(output.images)) return false;
+  return output.images.some(image => {
+    if (!isRecord(image)) return false;
+    return typeof image.image_url === 'string' && image.image_url.trim() !== '';
+  });
+}
+
+function mergeImagesIntoOutputIfMissing(
+  output: UnknownRecord,
+  contextImages: NormalizedHandbookImage[],
+): UnknownRecord {
+  if (contextImages.length === 0) return output;
+  if (hasOutputImageUrls(output)) return output;
+
+  return {
+    ...output,
+    images: contextImages,
+    image_count: contextImages.length,
+    image_refs: contextImages.map(image => ({
+      block_id: image.block_id,
+      block_title: image.block_title,
+      alt: image.alt,
+      source: image.source ?? '',
+      credit: image.credit,
+    })),
+  };
+}
+
+function getOutputImagesByBlockId(
+  output: UnknownRecord,
+): Map<string, NormalizedHandbookImage> {
+  const normalizedImages = normalizeHandbookImageArray(output.images);
+  const imageByBlockId = new Map<string, NormalizedHandbookImage>();
+
+  for (const image of normalizedImages) {
+    imageByBlockId.set(image.block_id, image);
+  }
+
+  return imageByBlockId;
+}
+
+function mergeEditorSessionImages(
+  session: EditorSession,
+  sourceOutput: UnknownRecord,
+): EditorSession {
+  const imageByBlockId = getOutputImagesByBlockId(sourceOutput);
+  if (imageByBlockId.size === 0) return session;
+
+  let changed = false;
+  const nextBlocks = session.blocks.map(block => {
+    if (block.imageUrl.trim()) return block;
+    const matchedImage = imageByBlockId.get(block.block_id);
+    if (!matchedImage) return block;
+
+    changed = true;
+    const mergedImageSource = normalizeEditableImageSource(
+      block.imageSource || matchedImage.source,
+    );
+    return {
+      ...block,
+      imageUrl: matchedImage.image_url,
+      imageAlt: block.imageAlt.trim() || matchedImage.alt || block.title,
+      imageQuery: block.imageQuery.trim() || matchedImage.query,
+      imageSource: mergedImageSource,
+      imageSourcePage:
+        block.imageSourcePage.trim() || matchedImage.source_page || '',
+      imageCredit: block.imageCredit.trim() || matchedImage.credit || '',
+      imageWidth: block.imageWidth ?? matchedImage.width,
+      imageHeight: block.imageHeight ?? matchedImage.height,
+    };
+  });
+
+  if (!changed) return session;
+  return {
+    ...session,
+    blocks: nextBlocks,
+  };
+}
+
 function toPersistedBlocksOutput(
   state: {
     context?: unknown;
@@ -237,33 +354,28 @@ function toPersistedBlocksOutput(
     : null;
   const contextRoot = isRecord(state.context) ? state.context : {};
   const contextVideo = isRecord(contextRoot.video) ? contextRoot.video : contextRoot;
-  const withContextVideoMeta = (output: UnknownRecord): UnknownRecord => ({
-    ...output,
-    title:
-      typeof output.title === 'string'
-        ? output.title
-        : typeof contextVideo.title === 'string'
-          ? contextVideo.title
-          : '',
-    videoId:
-      typeof output.videoId === 'string'
-        ? output.videoId
-        : typeof contextVideo.videoId === 'string'
-          ? contextVideo.videoId
-          : '',
-    videoUrl:
-      typeof output.videoUrl === 'string'
-        ? output.videoUrl
-        : typeof contextVideo.videoUrl === 'string'
-          ? contextVideo.videoUrl
-          : '',
-    thumbnailUrl:
-      typeof output.thumbnailUrl === 'string'
-        ? output.thumbnailUrl
-        : typeof contextVideo.thumbnailUrl === 'string'
-          ? contextVideo.thumbnailUrl
-          : '',
-  });
+  const contextImages = extractContextHandbookImages(state.context);
+  const withContextVideoMeta = (output: UnknownRecord): UnknownRecord =>
+    mergeImagesIntoOutputIfMissing(
+      {
+        ...output,
+        title: pickPreferredString(
+          output.title,
+          output.guideTitle,
+          output.guide_title,
+          contextVideo.title,
+        ),
+        videoId: pickPreferredString(output.videoId, output.video_id, contextVideo.videoId),
+        videoUrl: pickPreferredString(output.videoUrl, output.video_url, contextVideo.videoUrl),
+        thumbnailUrl: pickPreferredString(
+          output.thumbnailUrl,
+          output.coverImageUrl,
+          output.cover_image_url,
+          contextVideo.thumbnailUrl,
+        ),
+      },
+      contextImages,
+    );
 
   const preferredResolveOutput = persistedToolOutputs?.resolve_spot_coordinates;
   if (isRecord(preferredResolveOutput) && Array.isArray(preferredResolveOutput.blocks)) {
@@ -294,17 +406,19 @@ function toPersistedBlocksOutput(
   return {
     sourceKey: 'persisted:resolve_spot_coordinates',
     toolName: 'resolve_spot_coordinates',
-    output: {
-      title: typeof contextVideo.title === 'string' ? contextVideo.title : '',
-      videoId: typeof contextVideo.videoId === 'string' ? contextVideo.videoId : '',
-      videoUrl: typeof contextVideo.videoUrl === 'string' ? contextVideo.videoUrl : '',
-      thumbnailUrl:
-        typeof contextVideo.thumbnailUrl === 'string' ? contextVideo.thumbnailUrl : '',
-      blockCount: state.blocks.length,
-      spotCount: fallbackSpotBlocks.length,
-      blocks: state.blocks,
-      spot_blocks: fallbackSpotBlocks,
-    },
+    output: mergeImagesIntoOutputIfMissing(
+      {
+        title: pickPreferredString(contextVideo.title),
+        videoId: pickPreferredString(contextVideo.videoId),
+        videoUrl: pickPreferredString(contextVideo.videoUrl),
+        thumbnailUrl: pickPreferredString(contextVideo.thumbnailUrl),
+        blockCount: state.blocks.length,
+        spotCount: fallbackSpotBlocks.length,
+        blocks: state.blocks,
+        spot_blocks: fallbackSpotBlocks,
+      },
+      contextImages,
+    ),
   };
 }
 
@@ -340,7 +454,7 @@ function MainContentLoadingState({ label }: { label: string }) {
             旅
           </span>
         </div>
-        <div className="relative h-6 w-6">
+        <div className="relative h-5 w-5">
           <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-accent-primary border-r-accent-primary" />
         </div>
         <p className="text-[16px] font-medium text-text-secondary">{label}</p>
@@ -371,9 +485,11 @@ export default function Chat() {
     completedSteps: state.completedSteps,
   }));
   const editorState = useSessionEditorSnapshot(sessionId);
+  const sessionHandbooksState = useSessionHandbooksState(sessionId);
   const {
     editedToolOutputs,
     editorSession,
+    activeHandbookId,
     handbookHtml,
     handbookPreviewUrl,
     handbookStatus,
@@ -395,10 +511,16 @@ export default function Chat() {
     useState<HandbookStyleId>('minimal-tokyo');
   const [setAsSessionDefault, setSetAsSessionDefault] = useState(true);
   const [editorHost, setEditorHost] = useState<HTMLElement | null>(null);
+  const [isVersionMenuOpen, setIsVersionMenuOpen] = useState(false);
+  const [isRemovingHandbookVersion, setIsRemovingHandbookVersion] = useState(false);
+  const [pendingDeleteHandbookVersionId, setPendingDeleteHandbookVersionId] = useState<
+    string | null
+  >(null);
   const [htmlPreviewLoadPhase, setHtmlPreviewLoadPhase] = useState<
     'idle' | 'loading' | 'revealing'
   >('idle');
   const htmlPreviewRevealTimerRef = useRef<number | null>(null);
+  const versionMenuRef = useRef<HTMLDivElement | null>(null);
   const isGuestUser = authUser?.isGuest ?? true;
   useHydrateAuthStore();
 
@@ -410,6 +532,7 @@ export default function Chat() {
   const hydratingSessionRef = useRef<string | null>(null);
   const activeHydrationSessionRef = useRef<string | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
+  const imageBackfillAttemptKeyRef = useRef<string | null>(null);
   const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -424,7 +547,11 @@ export default function Chat() {
     transport: chatTransport,
   });
   const isBusy = status === 'submitted' || status === 'streaming';
-  const guidePreviewPath = sessionId ? `/api/guide/${sessionId}` : '/api/guide';
+  const guidePreviewPath = activeHandbookId
+    ? `/api/guide/${activeHandbookId}`
+    : sessionId
+      ? `/api/guide/${sessionId}`
+      : '/api/guide';
   const previewAddress = useMemo(
     () => toPreviewAddress(handbookPreviewUrl, guidePreviewPath),
     [guidePreviewPath, handbookPreviewUrl],
@@ -570,6 +697,7 @@ export default function Chat() {
     setMessages([]);
     sessionActions.setSessionId(sessionId);
     sessionEditorActions.ensureSession(sessionId);
+    handbooksActions.ensureSession(sessionId);
   }, [sessionId, setMessages]);
 
   useEffect(() => {
@@ -586,6 +714,31 @@ export default function Chat() {
     if (!sessionId) return;
     sessionActions.syncFromMessages(sessionId, messages, editedToolOutputs, isBusy);
   }, [editedToolOutputs, isBusy, messages, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    sessionEditorActions.hydrateHandbooks(sessionId, {
+      activeHandbookId: sessionHandbooksState.activeHandbookId,
+      handbooks: sessionHandbooksState.handbooks.map(handbook => {
+        const basePreviewPath = handbook.previewPath
+          ? toGuidePreviewPath(handbook.previewPath, handbook.id)
+          : `/api/guide/${handbook.id}`;
+        const cacheVersion = encodeURIComponent(handbook.generatedAt ?? handbook.updatedAt);
+        return {
+          handbookId: handbook.id,
+          title: handbook.title,
+          lifecycle: handbook.lifecycle,
+          previewUrl: `${basePreviewPath}?v=${cacheVersion}`,
+          status: 'ready',
+          error: null,
+        };
+      }),
+    });
+  }, [
+    sessionHandbooksState.activeHandbookId,
+    sessionHandbooksState.handbooks,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (!sessionId || !handbookStyle) return;
@@ -634,14 +787,7 @@ export default function Chat() {
           setMessages(payload.session.messages);
         }
 
-        const handbookHtmlFromDb =
-          typeof payload.session?.state?.handbookHtml === 'string'
-            ? payload.session.state.handbookHtml
-            : null;
-        const previewPath =
-          typeof payload.session?.state?.previewPath === 'string'
-            ? payload.session.state.previewPath
-            : null;
+        const handbookPayload = await handbooksActions.hydrateSession(sessionId);
         const persistedHandbookStyle = getPersistedHandbookStyle(
           payload.session?.state?.context,
         );
@@ -651,27 +797,24 @@ export default function Chat() {
           setHandbookStyle(persistedHandbookStyle);
         }
 
-        if (handbookHtmlFromDb) {
-          sessionEditorActions.setHandbookHtml(sessionId, handbookHtmlFromDb);
-          sessionEditorActions.setHandbookStatus(sessionId, 'ready');
-          sessionEditorActions.setHandbookError(sessionId, null);
+        const resolvedHandbooks = handbookPayload?.handbooks ?? [];
+        if (resolvedHandbooks.length > 0) {
+          const resolvedActiveHandbookId =
+            handbookPayload?.activeHandbookId ?? resolvedHandbooks[0]?.id ?? null;
+          sessionEditorActions.setActiveHandbookId(sessionId, resolvedActiveHandbookId);
+          if (resolvedActiveHandbookId) {
+            sessionEditorActions.setHandbookStatus(
+              sessionId,
+              'ready',
+              resolvedActiveHandbookId,
+            );
+            sessionEditorActions.setHandbookError(
+              sessionId,
+              null,
+              resolvedActiveHandbookId,
+            );
+          }
           sessionEditorActions.setCenterViewMode(sessionId, 'html');
-        } else if (previewPath) {
-          sessionEditorActions.setHandbookStatus(sessionId, 'ready');
-          sessionEditorActions.setHandbookError(sessionId, null);
-          sessionEditorActions.setCenterViewMode(sessionId, 'html');
-        }
-        if (previewPath) {
-          const normalizedPreviewPath = toGuidePreviewPath(previewPath, sessionId);
-          sessionEditorActions.setHandbookPreviewUrl(
-            sessionId,
-            `${normalizedPreviewPath}?v=latest`,
-          );
-        } else if (handbookHtmlFromDb) {
-          sessionEditorActions.setHandbookPreviewUrl(
-            sessionId,
-            `/api/guide/${sessionId}?v=latest`,
-          );
         }
 
         const persistedEditable = toPersistedBlocksOutput(payload.session?.state);
@@ -688,7 +831,7 @@ export default function Chat() {
           );
           if (restoredEditorSession) {
             sessionEditorActions.setEditorSession(sessionId, restoredEditorSession);
-            if (!handbookHtmlFromDb && !previewPath) {
+            if (resolvedHandbooks.length === 0) {
               sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
             }
           }
@@ -893,6 +1036,7 @@ export default function Chat() {
       videoUrl: session.videoUrl,
       thumbnailUrl: session.thumbnailUrl,
       blocks,
+      images: Array.isArray(nextOutput.images) ? nextOutput.images : [],
       handbookStyle: styleId,
     };
 
@@ -901,10 +1045,8 @@ export default function Chat() {
       session.sourceKey,
       nextOutput,
     );
-    sessionEditorActions.setHandbookStatus(sessionId, 'generating');
-    sessionEditorActions.setHandbookError(sessionId, null);
-    sessionEditorActions.setHandbookHtml(sessionId, null);
-    sessionEditorActions.setHandbookPreviewUrl(sessionId, null);
+    sessionEditorActions.setHandbookStatus(sessionId, 'generating', activeHandbookId);
+    sessionEditorActions.setHandbookError(sessionId, null, activeHandbookId);
     sessionEditorActions.setCenterViewMode(sessionId, 'html');
 
     const prompt = [
@@ -925,7 +1067,7 @@ export default function Chat() {
       beforeCount: countGenerateHandbookOutputs(messages),
     };
     sendMessage({ text: prompt });
-  }, [handbookStyle, isBusy, messages, requireLogin, sendMessage, sessionId]);
+  }, [activeHandbookId, handbookStyle, isBusy, messages, requireLogin, sendMessage, sessionId]);
 
   const openStyleConfirmModal = useCallback((session: EditorSession) => {
     if (!requireLogin('Manual HTML generation requires an account login.')) return;
@@ -1034,14 +1176,23 @@ export default function Chat() {
     }
 
     if (handbookStatus === 'generating') {
-      sessionEditorActions.setHandbookStatus(sessionId, 'error');
+      sessionEditorActions.setHandbookStatus(sessionId, 'error', activeHandbookId);
       sessionEditorActions.setHandbookError(
         sessionId,
         'Generation did not reach generate_handbook_html. Please click Generate again.',
+        activeHandbookId,
       );
       sessionEditorActions.setCenterViewMode(sessionId, 'html');
     }
-  }, [handbookHtml, handbookPreviewUrl, handbookStatus, isBusy, messages, sessionId]);
+  }, [
+    activeHandbookId,
+    handbookHtml,
+    handbookPreviewUrl,
+    handbookStatus,
+    isBusy,
+    messages,
+    sessionId,
+  ]);
 
   useEffect(() => {
     for (const message of messages) {
@@ -1064,6 +1215,17 @@ export default function Chat() {
           const output = editedToolOutputs[sourceKey] ?? part.output;
           console.log(`[chat-ui] ${toolName} output-json`, output);
 
+          const nextTitle = extractSessionTitleFromToolOutput(toolName, output);
+          if (
+            sessionId &&
+            nextTitle &&
+            nextTitle !== currentSessionSummary?.title
+          ) {
+            sessionsActions.updateSession(sessionId, {
+              title: nextTitle,
+            });
+          }
+
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
             if (!isRecord(output)) {
@@ -1075,9 +1237,24 @@ export default function Chat() {
               sessionEditorActions.setCenterViewMode(sessionId, 'html');
               return;
             }
-            const previewUrl =
+            const handbookId =
+              typeof output.handbook_id === 'string' && output.handbook_id.trim()
+                ? output.handbook_id.trim()
+                : null;
+            const targetHandbookId = handbookId ?? activeHandbookId ?? null;
+            if (handbookId) {
+              sessionEditorActions.setActiveHandbookId(sessionId, handbookId);
+              void handbooksActions.hydrateSession(sessionId);
+            }
+            const rawPreviewUrl =
               typeof output.preview_url === 'string' && output.preview_url
-                ? `${output.preview_url}?v=${
+                ? output.preview_url
+                : handbookId
+                  ? `/api/guide/${handbookId}`
+                  : null;
+            const previewUrl =
+              rawPreviewUrl
+                ? `${rawPreviewUrl}?v=${
                     typeof output.generated_at === 'string'
                       ? encodeURIComponent(output.generated_at)
                       : Date.now()
@@ -1092,14 +1269,15 @@ export default function Chat() {
               sessionEditorActions.setHandbookError(
                 sessionId,
                 'Handbook tool did not return inline HTML or preview URL.',
+                targetHandbookId,
               );
               sessionEditorActions.setCenterViewMode(sessionId, 'html');
               return;
             }
-            sessionEditorActions.setHandbookHtml(sessionId, inlineHtml);
-            sessionEditorActions.setHandbookPreviewUrl(sessionId, previewUrl);
-            sessionEditorActions.setHandbookStatus(sessionId, 'ready');
-            sessionEditorActions.setHandbookError(sessionId, null);
+            sessionEditorActions.setHandbookHtml(sessionId, inlineHtml, targetHandbookId);
+            sessionEditorActions.setHandbookPreviewUrl(sessionId, previewUrl, targetHandbookId);
+            sessionEditorActions.setHandbookStatus(sessionId, 'ready', targetHandbookId);
+            sessionEditorActions.setHandbookError(sessionId, null, targetHandbookId);
             sessionEditorActions.setCenterViewMode(sessionId, 'html');
           }
         }
@@ -1112,18 +1290,25 @@ export default function Chat() {
 
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
-            sessionEditorActions.setHandbookStatus(sessionId, 'error');
-            sessionEditorActions.setHandbookPreviewUrl(sessionId, null);
+            sessionEditorActions.setHandbookStatus(sessionId, 'error', activeHandbookId);
+            sessionEditorActions.setHandbookPreviewUrl(sessionId, null, activeHandbookId);
             sessionEditorActions.setHandbookError(
               sessionId,
               part.errorText || 'Failed to generate handbook HTML.',
+              activeHandbookId,
             );
             sessionEditorActions.setCenterViewMode(sessionId, 'html');
           }
         }
       });
     }
-  }, [editedToolOutputs, messages, sessionId]);
+  }, [
+    activeHandbookId,
+    currentSessionSummary?.title,
+    editedToolOutputs,
+    messages,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1158,6 +1343,60 @@ export default function Chat() {
     }
   }, [editedToolOutputs, editorSession, isGuestUser, messages, sessionId]);
 
+  useEffect(() => {
+    if (!sessionId || !editorSession) return;
+
+    if (centerViewMode !== 'blocks') {
+      imageBackfillAttemptKeyRef.current = null;
+      return;
+    }
+
+    const missingImageCount = editorSession.blocks.filter(
+      block => !block.imageUrl.trim(),
+    ).length;
+    if (missingImageCount === 0) {
+      imageBackfillAttemptKeyRef.current = null;
+      return;
+    }
+
+    const attemptKey = `${sessionId}:${editorSession.sourceKey}:${editorSession.blocks.length}`;
+    if (imageBackfillAttemptKeyRef.current === attemptKey) return;
+    imageBackfillAttemptKeyRef.current = attemptKey;
+
+    let cancelled = false;
+    const backfillEditorImages = async () => {
+      try {
+        const payload = await fetchSessionHydrationPayload(sessionId);
+        if (cancelled) return;
+        const persistedEditable = toPersistedBlocksOutput(payload?.session?.state);
+        if (!persistedEditable) return;
+        const mergedSession = mergeEditorSessionImages(
+          editorSession,
+          persistedEditable.output,
+        );
+        if (mergedSession === editorSession) return;
+
+        sessionEditorActions.setEditorSession(sessionId, mergedSession);
+        sessionEditorActions.upsertEditedToolOutput(
+          sessionId,
+          mergedSession.sourceKey,
+          applyEditorSession(mergedSession),
+        );
+      } catch (error) {
+        console.warn('[chat-ui] editor-image-backfill-failed', {
+          sessionId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+
+    void backfillEditorImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [centerViewMode, editorSession, sessionId]);
+
   const headerSubtitle = processState.stopped
     ? `Stopped at ${formatToolLabel(processState.currentStep)}`
     : processState.error || processState.failedStep
@@ -1170,6 +1409,21 @@ export default function Chat() {
 
   const showBlocksView = centerViewMode === 'blocks';
   const showHtmlView = centerViewMode === 'html';
+  const activeHandbookIndex = sessionHandbooksState.handbooks.findIndex(
+    handbook => handbook.id === activeHandbookId,
+  );
+  const activeHandbookVersion =
+    activeHandbookIndex >= 0
+      ? sessionHandbooksState.handbooks.length - activeHandbookIndex
+      : 1;
+  const activeHandbookVersionLabel = `v${activeHandbookVersion}`;
+  const pendingDeleteHandbookVersion = pendingDeleteHandbookVersionId
+    ? (
+      sessionHandbooksState.handbooks.find(
+        handbook => handbook.id === pendingDeleteHandbookVersionId,
+      ) ?? null
+    )
+    : null;
   const showBlocksLoadingState = Boolean(
     showBlocksView &&
       !editorSession &&
@@ -1186,15 +1440,102 @@ export default function Chat() {
       handbookStatus !== 'idle',
   );
 
+  useEffect(() => {
+    if (!isVersionMenuOpen) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && versionMenuRef.current?.contains(target)) return;
+      setIsVersionMenuOpen(false);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsVersionMenuOpen(false);
+    };
+
+    const closeOnScroll = () => setIsVersionMenuOpen(false);
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('blur', closeOnScroll);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('blur', closeOnScroll);
+    };
+  }, [isVersionMenuOpen]);
+
+  useEffect(() => {
+    if (showHtmlView) return;
+    setIsVersionMenuOpen(false);
+  }, [showHtmlView]);
+
+  const activateHandbookVersion = useCallback(async (nextHandbookId: string) => {
+    if (!sessionId || !nextHandbookId) return;
+    if (nextHandbookId === activeHandbookId) {
+      setIsVersionMenuOpen(false);
+      return;
+    }
+    try {
+      await handbooksActions.setActiveHandbook(sessionId, nextHandbookId);
+      sessionEditorActions.setActiveHandbookId(sessionId, nextHandbookId);
+      setIsVersionMenuOpen(false);
+    } catch (error) {
+      console.error('[chat-ui] activate-handbook-version-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to switch handbook.');
+    }
+  }, [activeHandbookId, sessionId]);
+
+  const requestDeleteHandbookVersion = useCallback((handbookId: string) => {
+    if (!handbookId || isRemovingHandbookVersion) return;
+    setIsVersionMenuOpen(false);
+    setPendingDeleteHandbookVersionId(handbookId);
+  }, [isRemovingHandbookVersion]);
+
+  const confirmDeleteHandbookVersion = useCallback(async () => {
+    if (!sessionId || !pendingDeleteHandbookVersionId) return;
+    const handbookId = pendingDeleteHandbookVersionId;
+    setPendingDeleteHandbookVersionId(null);
+    setIsRemovingHandbookVersion(true);
+    try {
+      const removed = await handbooksActions.removeHandbook(sessionId, handbookId);
+      if (!removed) {
+        toast.error('Handbook not found.');
+        return;
+      }
+
+      sessionEditorActions.removeHandbookState(sessionId, handbookId);
+      const nextActiveHandbookId =
+        handbooksStore.getState().bySessionId[sessionId]?.activeHandbookId ?? null;
+      sessionEditorActions.setActiveHandbookId(sessionId, nextActiveHandbookId);
+      if (!nextActiveHandbookId) {
+        sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
+      }
+      toast.success('Handbook deleted.');
+    } catch (error) {
+      console.error('[chat-ui] delete-handbook-version-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete handbook.');
+    } finally {
+      setIsRemovingHandbookVersion(false);
+      setIsVersionMenuOpen(false);
+    }
+  }, [pendingDeleteHandbookVersionId, sessionId]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-elevated">
       <div className="border-b border-border-light px-5 pb-4 pt-5">
-        <h1 className="truncate text-[15px] font-semibold leading-[1.35] text-text-primary">
-          {currentSessionSummary?.title || 'Untitled Guide'}
-        </h1>
-        <p className="mt-1 text-[12px] font-medium leading-4 text-text-tertiary">
-          {headerSubtitle}
-        </p>
+        <div className="min-w-0">
+          <h1 className="truncate text-[15px] font-semibold leading-[1.35] text-text-primary">
+            {currentSessionSummary?.title || 'Untitled Guide'}
+          </h1>
+          <p className="mt-1 text-[12px] font-medium leading-4 text-text-tertiary">
+            {headerSubtitle}
+          </p>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -1240,6 +1581,7 @@ export default function Chat() {
                   <MessageContent
                     message={message}
                     editedToolOutputs={editedToolOutputs}
+                    handbookStyle={handbookStyle}
                     onOpenEditor={openEditor}
                   />
                 </div>
@@ -1266,7 +1608,7 @@ export default function Chat() {
         }}
       >
         <div className="w-full">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <input
               id="chat-input"
               className="h-11 w-full rounded-[12px] border border-transparent bg-bg-secondary px-4 text-[14px] text-text-primary outline-none transition placeholder:text-text-tertiary focus:border-accent-primary focus:bg-bg-elevated"
@@ -1277,7 +1619,7 @@ export default function Chat() {
                 if (inputError) setInputError('');
               }}
             />
-            {isBusy && (
+            {isBusy ? (
               <button
                 type="button"
                 onClick={async () => {
@@ -1295,23 +1637,20 @@ export default function Chat() {
                     });
                   }
                 }}
-                className="h-11 shrink-0 rounded-[12px] border border-border-default bg-bg-elevated px-3 text-[12px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#D4D0CB] transition hover:brightness-95"
               >
-                Stop
+                <span className="h-[14px] w-[14px] rounded-[2px] bg-[#9C968F]" aria-hidden />
+                <span className="sr-only">Stop</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-accent-primary text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
+              >
+                <LuSendHorizontal className="h-[18px] w-[18px]" />
+                <span className="sr-only">Send</span>
               </button>
             )}
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-accent-primary text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
-            >
-              {isBusy ? (
-                <LuLoader className="h-[18px] w-[18px] animate-spin" />
-              ) : (
-                <LuSendHorizontal className="h-[18px] w-[18px]" />
-              )}
-              <span className="sr-only">{isBusy ? 'Running' : 'Send'}</span>
-            </button>
           </div>
           {inputError && <p className="mt-1 text-[11px] font-medium ui-text-error">{inputError}</p>}
         </div>
@@ -1336,8 +1675,78 @@ export default function Chat() {
                         <span className="h-3 w-3 rounded-full bg-amber-400" />
                         <span className="h-3 w-3 rounded-full bg-emerald-500" />
                       </div>
-                      <div className="flex h-7 flex-1 items-center rounded-[6px] bg-bg-elevated px-3 text-[12px] font-normal text-text-tertiary">
-                        {previewAddress}
+                      <div className="relative flex h-7 flex-1 items-center" ref={versionMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsVersionMenuOpen(open => !open)}
+                          disabled={
+                            sessionHandbooksState.handbooks.length === 0
+                            || isSessionHydrating
+                            || isRemovingHandbookVersion
+                          }
+                          className={`inline-flex h-7 w-full items-center gap-2 px-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                            isVersionMenuOpen
+                              ? 'rounded-t-[6px] rounded-b-none border border-border-light border-b-0 bg-bg-elevated shadow-[0_10px_24px_rgba(45,42,38,0.14)]'
+                              : 'rounded-[6px] bg-bg-elevated hover:bg-bg-primary'
+                          }`}
+                        >
+                          <span className="inline-flex shrink-0 rounded-[5px] bg-bg-secondary px-1.5 py-[1px] text-[10px] font-semibold text-text-tertiary">
+                            {activeHandbookId ? activeHandbookVersionLabel : 'v-'}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[12px] font-normal text-text-primary">
+                            {previewAddress}
+                          </span>
+                          <LuChevronDown
+                            className={`h-3 w-3 shrink-0 text-[#9C968F] transition-transform ${
+                              isVersionMenuOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                        {isVersionMenuOpen && (
+                          <div className="absolute left-0 right-0 top-full z-30 w-full overflow-hidden rounded-b-[10px] rounded-t-none border border-border-light border-t-0 bg-bg-elevated p-1">
+                            {sessionHandbooksState.handbooks.map((handbook, index) => {
+                              const versionLabel = `v${
+                                sessionHandbooksState.handbooks.length - index
+                              }`;
+                              const selected = handbook.id === activeHandbookId;
+                              return (
+                                <div
+                                  key={handbook.id}
+                                  className={`flex items-center gap-1 rounded-[7px] px-1 py-[4px] transition ${
+                                    selected ? 'bg-bg-secondary' : 'hover:bg-bg-primary'
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => void activateHandbookVersion(handbook.id)}
+                                    className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-[8px] py-[4px] text-left"
+                                  >
+                                    <span className="inline-flex shrink-0 rounded-[5px] bg-bg-secondary px-1.5 py-[1px] text-[10px] font-semibold text-text-tertiary">
+                                      {versionLabel}
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-[12px] font-medium text-text-primary">
+                                        {handbook.title || versionLabel}
+                                      </span>
+                                      <span className="block truncate text-[11px] text-text-secondary">
+                                        {`/api/guide/${handbook.id}`}
+                                      </span>
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => requestDeleteHandbookVersion(handbook.id)}
+                                    disabled={isRemovingHandbookVersion}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#9C968F] transition hover:bg-bg-elevated hover:text-accent-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label={`Delete ${handbook.title || versionLabel}`}
+                                  >
+                                    <LuTrash2 className="h-[14px] w-[14px]" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1472,31 +1881,12 @@ export default function Chat() {
                     <p className="mt-6 text-[15px] font-semibold text-text-primary">
                       Aesthetic
                     </p>
-                    <div className="mt-3 flex flex-nowrap items-start justify-between gap-1">
-                      {HANDBOOK_STYLE_OPTIONS.map(option => {
-                        const selected = selectedStyleOption === option.id;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => setSelectedStyleOption(option.id)}
-                            aria-pressed={selected}
-                            className="group relative w-[80px] p-0 text-center transition"
-                          >
-                            {renderStyleSelectionPreview(option.id, selected)}
-                            <span
-                              className={`mt-2 block whitespace-pre-line text-[13px] font-medium leading-[1.25] ${
-                                selected
-                                  ? 'text-text-primary'
-                                  : 'text-text-secondary'
-                              }`}
-                            >
-                              {getStyleSelectionLabel(option.id)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <AestheticStyleSelector
+                      className="mt-3"
+                      value={selectedStyleOption}
+                      onChange={setSelectedStyleOption}
+                      disabled={isBusy}
+                    />
 
                     <button
                       type="button"
@@ -1542,6 +1932,17 @@ export default function Chat() {
             editorHost,
           )
         : null}
+      <DeleteConfirmationDialog
+        open={Boolean(pendingDeleteHandbookVersionId)}
+        title="Delete Handbook?"
+        description={`Delete ${
+          (pendingDeleteHandbookVersion?.title || '').trim() || 'this handbook'
+        }? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmDisabled={isRemovingHandbookVersion}
+        onCancel={() => setPendingDeleteHandbookVersionId(null)}
+        onConfirm={confirmDeleteHandbookVersion}
+      />
     </div>
   );
 }

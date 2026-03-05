@@ -61,24 +61,44 @@ export function createRunToolStep(options: {
       if (isAbortError(error)) {
         runtime.requestAborted = true;
         runtime.requestToolStatus[toolName] = 'cancelled';
-        await cancelSessionStep({
-          stepId,
-          sessionId,
-          userId,
-          durationMs: getDurationMs(startedAt),
-        });
+        try {
+          await cancelSessionStep({
+            stepId,
+            sessionId,
+            userId,
+            durationMs: getDurationMs(startedAt),
+          });
+        } catch (persistError) {
+          console.error('[step-runner] cancel-session-step-failed', {
+            sessionId,
+            stepId,
+            toolName,
+            message:
+              persistError instanceof Error ? persistError.message : String(persistError),
+          });
+        }
         throw error;
       }
       runtime.requestToolStatus[toolName] = 'error';
       runtime.requestToolErrors[toolName] = errorMessage;
-      await failSessionStep({
-        stepId,
-        sessionId,
-        userId,
-        toolName,
-        errorMessage,
-        durationMs: getDurationMs(startedAt),
-      });
+      try {
+        await failSessionStep({
+          stepId,
+          sessionId,
+          userId,
+          toolName,
+          errorMessage,
+          durationMs: getDurationMs(startedAt),
+        });
+      } catch (persistError) {
+        console.error('[step-runner] fail-session-step-failed', {
+          sessionId,
+          stepId,
+          toolName,
+          message:
+            persistError instanceof Error ? persistError.message : String(persistError),
+        });
+      }
       throw error;
     }
   };

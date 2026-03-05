@@ -2,16 +2,14 @@
 
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import {
-  DEFAULT_HANDBOOK_LIFECYCLE,
-  type HandbookLifecycle,
-} from '@/lib/handbook-lifecycle';
 
 export interface SessionSummary {
   id: string;
   title: string;
   description?: string | null;
-  handbookLifecycle?: HandbookLifecycle;
+  activeHandbookId?: string | null;
+  handbookCount?: number;
+  publicHandbookCount?: number;
   meta: string;
   isError?: boolean;
   status?: 'idle' | 'loading' | 'error' | 'completed' | 'cancelled';
@@ -66,7 +64,16 @@ function normalizeAndSortSessions(
 ): SessionSummary[] {
   const normalized = sessions.map(session => ({
     ...session,
-    handbookLifecycle: session.handbookLifecycle ?? DEFAULT_HANDBOOK_LIFECYCLE,
+    activeHandbookId: session.activeHandbookId ?? null,
+    handbookCount:
+      typeof session.handbookCount === 'number' && Number.isFinite(session.handbookCount)
+        ? Math.max(0, Math.floor(session.handbookCount))
+        : 0,
+    publicHandbookCount:
+      typeof session.publicHandbookCount === 'number'
+      && Number.isFinite(session.publicHandbookCount)
+        ? Math.max(0, Math.floor(session.publicHandbookCount))
+        : 0,
     startedAt:
       typeof session.startedAt === 'number' ? session.startedAt : session.startedAt ?? null,
     createdAt: session.createdAt ?? fallbackNow,
@@ -193,8 +200,16 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
     set(previous => {
       const nextSession: SessionSummary = {
         ...session,
-        handbookLifecycle:
-          session.handbookLifecycle ?? DEFAULT_HANDBOOK_LIFECYCLE,
+        activeHandbookId: session.activeHandbookId ?? null,
+        handbookCount:
+          typeof session.handbookCount === 'number' && Number.isFinite(session.handbookCount)
+            ? Math.max(0, Math.floor(session.handbookCount))
+            : 0,
+        publicHandbookCount:
+          typeof session.publicHandbookCount === 'number'
+          && Number.isFinite(session.publicHandbookCount)
+            ? Math.max(0, Math.floor(session.publicHandbookCount))
+            : 0,
         startedAt:
           typeof session.startedAt === 'number' ? session.startedAt : session.startedAt ?? null,
         createdAt: session.createdAt ?? now,
@@ -256,7 +271,9 @@ const useSessionsZustandStore = create<SessionsStoreState>((set, get) => ({
           nextSession.status !== session.status ||
           nextSession.lastStep !== session.lastStep ||
           nextSession.startedAt !== session.startedAt ||
-          nextSession.handbookLifecycle !== session.handbookLifecycle ||
+          nextSession.activeHandbookId !== session.activeHandbookId ||
+          nextSession.handbookCount !== session.handbookCount ||
+          nextSession.publicHandbookCount !== session.publicHandbookCount ||
           nextSession.createdAt !== session.createdAt;
 
         if (hasDiff) {

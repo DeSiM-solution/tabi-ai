@@ -8,9 +8,6 @@ const patchSessionStateSchema = z.object({
   blocks: z.unknown().optional(),
   spotBlocks: z.unknown().optional(),
   toolOutputs: z.unknown().optional(),
-  handbookHtml: z.string().optional().nullable(),
-  incrementHandbookVersion: z.boolean().optional(),
-  previewPath: z.string().optional().nullable(),
 });
 
 function getSessionId(params: { id: string }): string {

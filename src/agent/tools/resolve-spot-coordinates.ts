@@ -10,8 +10,56 @@ import {
   applySpotLocations,
   geocodeSpotByQuery,
   getSpotBlocks,
+  getVideoThumbnailUrl,
+  normalizeSessionTitle,
   validateSpotQueryOutput,
 } from './shared';
+
+function resolveVideoMeta(ctx: AgentToolContext): {
+  videoId: string;
+  videoUrl: string;
+  title: string;
+  thumbnailUrl: string | null;
+} {
+  const contextVideo = ctx.runtime.latestVideoContext;
+  const fallbackVideo = ctx.runtime.latestApifyVideos[0] ?? null;
+
+  const videoId =
+    (typeof contextVideo?.videoId === 'string' && contextVideo.videoId.trim()
+      ? contextVideo.videoId.trim()
+      : null)
+    ?? (typeof fallbackVideo?.id === 'string' && fallbackVideo.id.trim()
+      ? fallbackVideo.id.trim()
+      : null)
+    ?? '';
+
+  const videoUrl =
+    (typeof contextVideo?.videoUrl === 'string' && contextVideo.videoUrl.trim()
+      ? contextVideo.videoUrl.trim()
+      : null)
+    ?? (typeof fallbackVideo?.url === 'string' && fallbackVideo.url.trim()
+      ? fallbackVideo.url.trim()
+      : null)
+    ?? '';
+
+  const title =
+    normalizeSessionTitle(contextVideo?.title)
+    ?? normalizeSessionTitle(fallbackVideo?.title)
+    ?? normalizeSessionTitle(fallbackVideo?.translatedTitle)
+    ?? '';
+
+  const thumbnailUrl =
+    contextVideo?.thumbnailUrl
+    ?? (fallbackVideo ? getVideoThumbnailUrl(fallbackVideo) : null)
+    ?? null;
+
+  return {
+    videoId,
+    videoUrl,
+    title,
+    thumbnailUrl,
+  };
+}
 
 export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
   return tool({
@@ -21,16 +69,19 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
     execute: async () =>
       ctx.runToolStep('resolve_spot_coordinates', {}, async () => {
         const startedAt = Date.now();
+        const videoMeta = resolveVideoMeta(ctx);
         if (ctx.runtime.spotCoordinatesResolved) {
           const spotBlocks =
             ctx.runtime.latestSpotBlocks.length > 0
               ? ctx.runtime.latestSpotBlocks
               : getSpotBlocks(ctx.runtime.latestBlocks);
           const cachedResult = {
-            videoId: ctx.runtime.latestVideoContext?.videoId ?? '',
-            videoUrl: ctx.runtime.latestVideoContext?.videoUrl ?? '',
-            title: ctx.runtime.latestVideoContext?.title ?? '',
-            thumbnailUrl: ctx.runtime.latestVideoContext?.thumbnailUrl ?? null,
+            videoId: videoMeta.videoId,
+            videoUrl: videoMeta.videoUrl,
+            title: videoMeta.title,
+            thumbnailUrl: videoMeta.thumbnailUrl,
+            guideTitle: videoMeta.title,
+            coverImageUrl: videoMeta.thumbnailUrl,
             blockCount: ctx.runtime.latestBlocks.length,
             spotCount: spotBlocks.length,
             spot_queries: [],
@@ -60,10 +111,12 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
         if (!sourceSpots || sourceSpots.length === 0) {
           ctx.runtime.spotCoordinatesResolved = true;
           const emptyResult = {
-            videoId: ctx.runtime.latestVideoContext?.videoId ?? '',
-            videoUrl: ctx.runtime.latestVideoContext?.videoUrl ?? '',
-            title: ctx.runtime.latestVideoContext?.title ?? '',
-            thumbnailUrl: ctx.runtime.latestVideoContext?.thumbnailUrl ?? null,
+            videoId: videoMeta.videoId,
+            videoUrl: videoMeta.videoUrl,
+            title: videoMeta.title,
+            thumbnailUrl: videoMeta.thumbnailUrl,
+            guideTitle: videoMeta.title,
+            coverImageUrl: videoMeta.thumbnailUrl,
             blockCount: ctx.runtime.latestBlocks.length,
             spotCount: 0,
             spot_queries: [],
@@ -194,10 +247,12 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
         });
 
         const resolveResult = {
-          videoId: ctx.runtime.latestVideoContext?.videoId ?? '',
-          videoUrl: ctx.runtime.latestVideoContext?.videoUrl ?? '',
-          title: ctx.runtime.latestVideoContext?.title ?? '',
-          thumbnailUrl: ctx.runtime.latestVideoContext?.thumbnailUrl ?? null,
+          videoId: videoMeta.videoId,
+          videoUrl: videoMeta.videoUrl,
+          title: videoMeta.title,
+          thumbnailUrl: videoMeta.thumbnailUrl,
+          guideTitle: videoMeta.title,
+          coverImageUrl: videoMeta.thumbnailUrl,
           blockCount: updatedBlocks.length,
           spotCount: ctx.runtime.latestSpotBlocks.length,
           spot_queries: object.spot_queries,

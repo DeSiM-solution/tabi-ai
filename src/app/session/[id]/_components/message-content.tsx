@@ -15,6 +15,11 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
+  AUTO_HANDBOOK_STYLE,
+  getHandbookStyleLabel,
+  type HandbookStyleId,
+} from '@/lib/handbook-style';
+import {
   canEditBlocks,
   getToolJsonPanel,
   getToolStatus,
@@ -113,12 +118,21 @@ function ToolCard({ part, output, sourceKey, onOpenEditor }: ToolCardProps) {
 interface MessageContentProps {
   message: UIMessage;
   editedToolOutputs: EditedOutputs;
+  handbookStyle: HandbookStyleId | null;
   onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
+}
+
+function toAssistantTitle(style: HandbookStyleId | null): string {
+  if (!style || style === AUTO_HANDBOOK_STYLE) {
+    return 'Guide Generate with Automatic Style';
+  }
+  return `Guide Generate with ${getHandbookStyleLabel(style)} Style`;
 }
 
 export function MessageContent({
   message,
   editedToolOutputs,
+  handbookStyle,
   onOpenEditor,
 }: MessageContentProps) {
   const assistantMarkdownClassName =
@@ -129,7 +143,9 @@ export function MessageContent({
       {message.role === 'assistant' && (
         <div className="flex items-center gap-2">
           <LuSparkles className="h-4 w-4 text-accent-primary" />
-          <p className="text-[14px] font-semibold text-text-primary">Guide Assistant</p>
+          <p className="text-[14px] font-semibold text-text-primary">
+            {toAssistantTitle(handbookStyle)}
+          </p>
         </div>
       )}
       {message.parts.map((part, i) => {

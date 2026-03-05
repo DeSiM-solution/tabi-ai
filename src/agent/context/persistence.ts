@@ -216,10 +216,6 @@ export async function hydrateRuntimeState(
     }
   }
 
-  if (typeof persistedState.handbookHtml === 'string' && persistedState.handbookHtml) {
-    runtime.latestHandbookHtml = persistedState.handbookHtml;
-  }
-
   for (const video of runtime.latestApifyVideos) {
     runtime.videoCache.set(video.id, video);
     runtime.videoCache.set(video.url, video);
@@ -232,16 +228,7 @@ export async function persistSessionSnapshot(
   sessionId: string,
   userId: string,
   runtime: AgentRuntimeState,
-  options: {
-    incrementHandbookVersion?: boolean;
-    forceHandbookHtml?: string | null;
-  } = {},
 ): Promise<void> {
-  const handbookHtml =
-    options.forceHandbookHtml !== undefined
-      ? options.forceHandbookHtml
-      : runtime.latestHandbookHtml ?? undefined;
-
   await upsertSessionState(sessionId, userId, {
     context: buildPersistedContext(
       runtime.latestVideoContext,
@@ -253,9 +240,6 @@ export async function persistSessionSnapshot(
     blocks: runtime.latestBlocks,
     spotBlocks: runtime.latestSpotBlocks,
     toolOutputs: runtime.latestToolOutputs,
-    handbookHtml,
-    incrementHandbookVersion: options.incrementHandbookVersion ?? false,
-    previewPath: runtime.latestHandbookHtml ? `/api/guide/${sessionId}` : undefined,
   });
 }
 

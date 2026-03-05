@@ -47,6 +47,7 @@ enum MessageRole {
 model Session {
   id          String        @id @default(cuid())
   userId      String?
+  activeHandbookId String?
   title       String        @default("Untitled Guide")
   description String?
   status      SessionStatus @default(IDLE)
@@ -65,10 +66,43 @@ model Session {
   messages ChatMessage[]
   steps    SessionStep[]
   state    SessionState?
+  handbooks Handbook[] @relation("SessionHandbooks")
+  activeHandbook Handbook? @relation("SessionActiveHandbook", fields: [activeHandbookId], references: [id], onDelete: SetNull)
 
   @@index([userId, updatedAt(sort: Desc)])
+  @@index([activeHandbookId])
   @@index([status, updatedAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
+}
+
+model Handbook {
+  id       String @id @default(cuid())
+  sessionId String
+  title    String @default("Untitled Handbook")
+  html     String
+
+  lifecycle   HandbookLifecycleStatus @default(DRAFT)
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  generatedAt DateTime?
+
+  sourceContext     Json?
+  sourceBlocks      Json?
+  sourceSpotBlocks  Json?
+  sourceToolOutputs Json?
+  previewPath       String?
+  style             String?
+  thumbnailUrl      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session Session @relation("SessionHandbooks", fields: [sessionId], references: [id], onDelete: Cascade)
+  activeInSessions Session[] @relation("SessionActiveHandbook")
+
+  @@index([sessionId, updatedAt(sort: Desc)])
+  @@index([sessionId, lifecycle, updatedAt(sort: Desc)])
+  @@index([lifecycle, publishedAt(sort: Desc)])
 }
 
 model User {
@@ -138,9 +172,6 @@ model SessionState {
   spotBlocks   Json?
   toolOutputs  Json?
   handbookHtml String?
-  handbookLifecycle HandbookLifecycleStatus @default(DRAFT)
-  handbookPublishedAt DateTime?
-  handbookArchivedAt DateTime?
   handbookVersion Int      @default(0)
   handbookGeneratedAt DateTime?
   previewPath String?
@@ -149,6 +180,4 @@ model SessionState {
   updatedAt DateTime @updatedAt
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
-  @@index([handbookLifecycle, updatedAt])
 }

@@ -26,7 +26,7 @@ export const HANDBOOK_STYLE_OPTIONS = [
   {
     id: 'let-tabi-decide',
     label: 'Let Tabi decide',
-    instruction: null,
+    instruction: 'Auto Detect from video content',
   },
 ] as const;
 

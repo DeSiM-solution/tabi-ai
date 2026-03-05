@@ -3,12 +3,19 @@ import type { TravelBlock, VideoContext } from '@/agent/tools/types';
 export function handbookSearchImagePlanPrompt(options: {
   targetBlocks: TravelBlock[];
   videoContext: VideoContext | null;
+  requiredImageCount?: number;
 }): string {
-  const { targetBlocks, videoContext } = options;
+  const { targetBlocks, videoContext, requiredImageCount } = options;
+  const minCoverageCount = Math.max(
+    1,
+    Math.min(targetBlocks.length, requiredImageCount ?? targetBlocks.length),
+  );
   return [
     'Plan Unsplash search queries for travel handbook blocks.',
     'Return strict JSON with exactly one key: "images".',
     'Each images item must contain: block_id, query, prompt, alt.',
+    `Cover as many distinct blocks as possible and include at least ${minCoverageCount} images.`,
+    'Do not repeat block_id unless absolutely necessary.',
     'query must be suitable for real stock photo search.',
     'prompt must still be provided (it can be reused for image generation fallback).',
     'alt must be short, concrete, and user-facing.',

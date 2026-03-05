@@ -1,5 +1,39 @@
 import { z } from 'zod';
 
+function readPositiveIntegerEnv(
+  name: string,
+  fallback: number,
+  options?: { min?: number; max?: number },
+): number {
+  const min = options?.min ?? 1;
+  const max = options?.max ?? Number.MAX_SAFE_INTEGER;
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  const normalized = Math.floor(parsed);
+  if (normalized < min || normalized > max) return fallback;
+  return normalized;
+}
+
+function readCoverageEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (parsed <= 0 || parsed > 1) return fallback;
+  return parsed;
+}
+
+function readBooleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
 export const YOUTUBE_CONFIG = {
   APIFY: {
     ACTOR_ID: process.env.APIFY_YOUTUBE_ACTOR_ID ?? 'streamers~youtube-scraper',
@@ -162,7 +196,31 @@ export const handbookInputSchema = z.object({
 
 export type HandbookInput = z.infer<typeof handbookInputSchema>;
 
-export const MAX_HANDBOOK_IMAGES = 6;
+export const HANDBOOK_IMAGE_MIN_COVERAGE = readCoverageEnv(
+  'HANDBOOK_IMAGE_MIN_COVERAGE',
+  0.75,
+);
+export const HANDBOOK_IMAGE_MAX_TARGETS = readPositiveIntegerEnv(
+  'HANDBOOK_IMAGE_MAX_TARGETS',
+  16,
+  { min: 1, max: 32 },
+);
+export const HANDBOOK_UNSPLASH_PER_PAGE = readPositiveIntegerEnv(
+  'HANDBOOK_UNSPLASH_PER_PAGE',
+  3,
+  { min: 1, max: 10 },
+);
+export const HANDBOOK_ENABLE_LLM_IMAGE_RERANK = readBooleanEnv(
+  'HANDBOOK_ENABLE_LLM_IMAGE_RERANK',
+  false,
+);
+export const HANDBOOK_IMAGE_RERANK_MAX_CALLS_PER_SESSION = readPositiveIntegerEnv(
+  'HANDBOOK_IMAGE_RERANK_MAX_CALLS_PER_SESSION',
+  2,
+  { min: 1, max: 10 },
+);
+
+export const MAX_HANDBOOK_IMAGES = HANDBOOK_IMAGE_MAX_TARGETS;
 
 export const handbookImagePlanSchema = z.object({
   images: z

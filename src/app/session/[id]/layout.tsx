@@ -2,18 +2,25 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useRouter } from 'next/navigation';
 import {
+  LuArchive,
+  LuChevronDown,
   LuCode,
   LuDownload,
   LuExternalLink,
   LuFileText,
+  LuFilePenLine,
+  LuGlobe,
+  LuLoader,
   LuMonitor,
+  LuPencil,
   LuRefreshCw,
   LuSave,
-  LuShare,
   LuSmartphone,
   LuSparkles,
+  LuTrash2,
 } from 'react-icons/lu';
 import { toast } from 'sonner';
 import {
@@ -24,8 +31,14 @@ import {
   useSessionsStore,
   sessionsActions,
 } from '@/stores/sessions-store';
+import {
+  handbooksActions,
+  handbooksStore,
+  useSessionHandbooksState,
+} from '@/stores/handbooks-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+import { RenameDialog } from '@/components/rename-dialog';
 import {
   SessionContextMenu,
   type SessionContextMenuState,
@@ -44,13 +57,9 @@ import {
 } from './_lib/center-toolbar-actions';
 
 const CHAT_PANEL_MIN_WIDTH = 300;
-const CHAT_PANEL_MAX_WIDTH = 600;
+const CHAT_PANEL_MAX_WIDTH = 500;
 const CHAT_PANEL_DEFAULT_WIDTH = 430;
-const HANDBOOK_LIFECYCLE_OPTIONS: HandbookLifecycle[] = [
-  'DRAFT',
-  'PUBLIC',
-  'ARCHIVED',
-];
+const TOOLBAR_TOOLTIP_OFFSET = 10;
 
 export default function SessionDetailLayout({
   children,
@@ -62,21 +71,40 @@ export default function SessionDetailLayout({
     sessionItems: state.sessions,
     sessionsLoading: state.loading,
   }));
-  const activeSessionSummary = sessionItems.find(item => item.id === activeSessionId) ?? null;
   const {
     centerViewMode,
     editorSession,
+    activeHandbookId: activeHandbookIdFromEditor,
     handbookHtml,
     handbookPreviewUrl,
     previewDevice,
   } =
     useSessionEditorSnapshot(activeSessionId);
+  const activeSessionHandbooksState = useSessionHandbooksState(activeSessionId);
+  const activeHandbookId =
+    activeHandbookIdFromEditor
+    ?? activeSessionHandbooksState.activeHandbookId
+    ?? null;
+  const activeHandbook =
+    activeSessionHandbooksState.handbooks.find(
+      handbook => handbook.id === activeHandbookId,
+    )
+    ?? null;
   const hasBlocks = Boolean(editorSession);
-  const hasHtml = Boolean(handbookHtml || handbookPreviewUrl);
-  const handbookLifecycle = activeSessionSummary?.handbookLifecycle ?? 'DRAFT';
+  const hasHtml = Boolean(
+    handbookHtml
+    || handbookPreviewUrl
+    || activeHandbook?.previewPath,
+  );
+  const handbookLifecycle =
+    activeHandbook?.lifecycle
+    ?? 'DRAFT';
   const isHandbookPublic = handbookLifecycle === 'PUBLIC';
-  const guidePreviewPath = activeSessionId ? `/api/guide/${activeSessionId}` : null;
-  const publicGuidePath = activeSessionId ? `/api/public/guide/${activeSessionId}` : null;
+  const guidePreviewPath = activeHandbookId
+    ? `/api/guide/${activeHandbookId}`
+    : activeSessionId
+      ? `/api/guide/${activeSessionId}`
+      : null;
   const previewTarget = handbookPreviewUrl || guidePreviewPath;
   const isProcessBusy = useSessionStore(state => state.loading);
   const isGuestUser = useAuthStore(state => state.user?.isGuest ?? true);
@@ -85,18 +113,84 @@ export default function SessionDetailLayout({
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(
     null,
   );
+  const [pendingDeleteHandbookId, setPendingDeleteHandbookId] = useState<string | null>(
+    null,
+  );
+  const [pendingRenameHandbookId, setPendingRenameHandbookId] = useState<string | null>(
+    null,
+  );
   const [renameDraft, setRenameDraft] = useState('');
+  const [renameHandbookDraft, setRenameHandbookDraft] = useState('');
   const [chatPanelWidth, setChatPanelWidth] = useState(CHAT_PANEL_DEFAULT_WIDTH);
   const [isResizingChatPanel, setIsResizingChatPanel] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isUpdatingLifecycle, setIsUpdatingLifecycle] = useState(false);
+  const [isHandbookMenuOpen, setIsHandbookMenuOpen] = useState(false);
+  const [isRemovingHandbook, setIsRemovingHandbook] = useState(false);
+  const [isRenamingHandbook, setIsRenamingHandbook] = useState(false);
+  const [toolbarTooltip, setToolbarTooltip] = useState<{
+    label: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const handbookMenuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const chatResizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   useHydrateSessionsStore();
   const pendingDeleteSession = pendingDeleteSessionId
     ? (sessionItems.find(item => item.id === pendingDeleteSessionId) ?? null)
     : null;
+  const pendingDeleteHandbook = pendingDeleteHandbookId
+    ? (
+      activeSessionHandbooksState.handbooks.find(
+        handbook => handbook.id === pendingDeleteHandbookId,
+      ) ?? null
+    )
+    : null;
+  const pendingRenameHandbook = pendingRenameHandbookId
+    ? (
+      activeSessionHandbooksState.handbooks.find(
+        handbook => handbook.id === pendingRenameHandbookId,
+      ) ?? null
+    )
+    : null;
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    handbooksActions.ensureSession(activeSessionId);
+    if (!handbooksActions.refreshIfNeeded(activeSessionId)) return;
+    void handbooksActions.hydrateSession(activeSessionId);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (activeSessionHandbooksState.activeHandbookId === activeHandbookIdFromEditor) return;
+    sessionEditorActions.setActiveHandbookId(
+      activeSessionId,
+      activeSessionHandbooksState.activeHandbookId,
+    );
+  }, [
+    activeHandbookIdFromEditor,
+    activeSessionHandbooksState.activeHandbookId,
+    activeSessionId,
+  ]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (activeHandbookId) return;
+    if (centerViewMode !== 'html') return;
+    sessionEditorActions.setCenterViewMode(activeSessionId, 'blocks');
+  }, [activeHandbookId, activeSessionId, centerViewMode]);
+
+  useEffect(() => {
+    if (centerViewMode !== 'blocks') return;
+    setIsHandbookMenuOpen(false);
+  }, [centerViewMode]);
+
+  useEffect(() => {
+    setToolbarTooltip(null);
+  }, [centerViewMode]);
 
   useEffect(() => {
     return () => {
@@ -176,6 +270,50 @@ export default function SessionDetailLayout({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!isHandbookMenuOpen) return;
+
+    const closeMenu = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && handbookMenuRef.current?.contains(target)) return;
+      setIsHandbookMenuOpen(false);
+    };
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsHandbookMenuOpen(false);
+    };
+
+    const closeOnScroll = () => setIsHandbookMenuOpen(false);
+
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('scroll', closeOnScroll, true);
+    window.addEventListener('blur', closeOnScroll);
+
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('scroll', closeOnScroll, true);
+      window.removeEventListener('blur', closeOnScroll);
+    };
+  }, [isHandbookMenuOpen]);
+
+  useEffect(() => {
+    if (!toolbarTooltip) return;
+
+    const hideTooltip = () => setToolbarTooltip(null);
+    window.addEventListener('scroll', hideTooltip, true);
+    window.addEventListener('resize', hideTooltip);
+    window.addEventListener('blur', hideTooltip);
+
+    return () => {
+      window.removeEventListener('scroll', hideTooltip, true);
+      window.removeEventListener('resize', hideTooltip);
+      window.removeEventListener('blur', hideTooltip);
+    };
+  }, [toolbarTooltip]);
+
   const openSessionContextMenu = (
     event: React.MouseEvent<HTMLElement>,
     sessionId: string,
@@ -251,7 +389,11 @@ export default function SessionDetailLayout({
     const base = (handbookPreviewUrl ?? guidePreviewPath)?.split('?')[0];
     if (!base) return;
 
-    sessionEditorActions.setHandbookPreviewUrl(activeSessionId, `${base}?v=${Date.now()}`);
+    sessionEditorActions.setHandbookPreviewUrl(
+      activeSessionId,
+      `${base}?v=${Date.now()}`,
+      activeHandbookId,
+    );
     sessionEditorActions.setCenterViewMode(activeSessionId, 'html');
   };
 
@@ -260,78 +402,31 @@ export default function SessionDetailLayout({
     window.open(previewTarget, '_blank', 'noopener,noreferrer');
   };
 
-  const copyTextToClipboard = async (value: string) => {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = value;
-    textarea.setAttribute('readonly', 'true');
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.append(textarea);
-    textarea.select();
-    const copied = document.execCommand('copy');
-    textarea.remove();
-    if (!copied) {
-      throw new Error('Clipboard copy failed');
-    }
-  };
-
-  const copyShareLink = async () => {
-    if (!isHandbookPublic || !publicGuidePath) {
-      toast.error('Publish this handbook before sharing.');
-      return;
-    }
-    try {
-      const target = new URL(publicGuidePath, window.location.origin).toString();
-      await copyTextToClipboard(target);
-      toast.success('Public link copied to clipboard');
-    } catch (error) {
-      console.error('[session-layout] copy-share-link-failed', error);
-      toast.error('Failed to copy link');
-    }
-  };
-
   const updateHandbookLifecycle = async (
     sessionId: string,
+    handbookId: string | null,
     nextLifecycle: HandbookLifecycle,
   ) => {
     if (!sessionId || isUpdatingLifecycle) return;
-    const targetSession = sessionItems.find(item => item.id === sessionId);
-    const previousLifecycle = targetSession?.handbookLifecycle ?? 'DRAFT';
+    const previousLifecycle = activeHandbook?.lifecycle ?? 'DRAFT';
     if (nextLifecycle === previousLifecycle) return;
 
-    if (nextLifecycle === 'PUBLIC' && sessionId === activeSessionId && !hasHtml) {
+    if (nextLifecycle === 'PUBLIC' && !hasHtml) {
       toast.error('Generate handbook HTML before publishing.');
       return;
     }
+    if (!handbookId) {
+      toast.error('No active handbook found for this session.');
+      return;
+    }
 
-    sessionsActions.updateSession(sessionId, {
-      handbookLifecycle: nextLifecycle,
-    });
     setIsUpdatingLifecycle(true);
+    setIsHandbookMenuOpen(false);
     setContextMenu(null);
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/handbook-lifecycle`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lifecycle: nextLifecycle }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error || `Failed to update lifecycle (${response.status})`);
-      }
-      await sessionsActions.hydrateFromServer();
+      await handbooksActions.setHandbookLifecycle(sessionId, handbookId, nextLifecycle);
       toast.success(`Handbook moved to ${getHandbookLifecycleLabel(nextLifecycle)}.`);
     } catch (error) {
-      sessionsActions.updateSession(sessionId, {
-        handbookLifecycle: previousLifecycle,
-      });
       console.error('[session-layout] update-handbook-lifecycle-failed', error);
       toast.error(error instanceof Error ? error.message : 'Failed to update handbook lifecycle.');
     } finally {
@@ -339,8 +434,80 @@ export default function SessionDetailLayout({
     }
   };
 
+  const requestRenameActiveHandbook = () => {
+    if (!activeHandbookId || !activeHandbook || isRenamingHandbook) return;
+    setPendingRenameHandbookId(activeHandbookId);
+    setRenameHandbookDraft(activeHandbook.title || '');
+    setIsHandbookMenuOpen(false);
+  };
+
+  const cancelRenameActiveHandbook = () => {
+    setPendingRenameHandbookId(null);
+    setRenameHandbookDraft('');
+  };
+
+  const confirmRenameActiveHandbook = async () => {
+    if (!activeSessionId || !pendingRenameHandbookId) return;
+    const originalTitle = pendingRenameHandbook?.title || '';
+    const trimmed = renameHandbookDraft.trim();
+    if (!trimmed || trimmed === originalTitle.trim()) {
+      cancelRenameActiveHandbook();
+      return;
+    }
+
+    setIsRenamingHandbook(true);
+    try {
+      await handbooksActions.updateHandbook(activeSessionId, pendingRenameHandbookId, {
+        title: trimmed,
+      });
+      toast.success('Handbook renamed.');
+      cancelRenameActiveHandbook();
+    } catch (error) {
+      console.error('[session-layout] rename-handbook-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to rename handbook.');
+    } finally {
+      setIsRenamingHandbook(false);
+      setIsHandbookMenuOpen(false);
+    }
+  };
+
+  const requestDeleteActiveHandbook = () => {
+    if (!activeHandbookId || isRemovingHandbook) return;
+    setIsHandbookMenuOpen(false);
+    setPendingDeleteHandbookId(activeHandbookId);
+  };
+
+  const confirmDeleteActiveHandbook = async () => {
+    if (!activeSessionId || !pendingDeleteHandbookId) return;
+    const targetHandbookId = pendingDeleteHandbookId;
+    setPendingDeleteHandbookId(null);
+    setIsRemovingHandbook(true);
+    try {
+      const removed = await handbooksActions.removeHandbook(activeSessionId, targetHandbookId);
+      if (!removed) {
+        toast.error('Handbook not found.');
+        return;
+      }
+      sessionEditorActions.removeHandbookState(activeSessionId, targetHandbookId);
+      const nextActiveHandbookId =
+        handbooksStore.getState().bySessionId[activeSessionId]?.activeHandbookId ?? null;
+      sessionEditorActions.setActiveHandbookId(activeSessionId, nextActiveHandbookId);
+      if (!nextActiveHandbookId) {
+        sessionEditorActions.setCenterViewMode(activeSessionId, 'blocks');
+      }
+      toast.success('Handbook deleted.');
+    } catch (error) {
+      console.error('[session-layout] delete-handbook-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete handbook.');
+    } finally {
+      setIsRemovingHandbook(false);
+      setIsHandbookMenuOpen(false);
+    }
+  };
+
   const dispatchCenterToolbarAction = (action: CenterToolbarAction) => {
     if (!activeSessionId) return;
+    setToolbarTooltip(null);
     if (action === 'save' && isGuestUser) {
       toast.warning('Please login to continue.', {
         description: 'Saving blocks requires an account login.',
@@ -357,6 +524,25 @@ export default function SessionDetailLayout({
     );
   };
 
+  const showToolbarTooltip = (
+    label: string,
+    event: React.MouseEvent<HTMLElement> | React.FocusEvent<HTMLElement>,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawLeft = rect.left + rect.width / 2;
+    const minLeft = 16;
+    const maxLeft = window.innerWidth - 16;
+    setToolbarTooltip({
+      label,
+      top: rect.bottom + TOOLBAR_TOOLTIP_OFFSET,
+      left: Math.min(maxLeft, Math.max(minLeft, rawLeft)),
+    });
+  };
+
+  const hideToolbarTooltip = () => {
+    setToolbarTooltip(null);
+  };
+
   const startResizeChatPanel = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     chatResizeStateRef.current = {
@@ -366,10 +552,6 @@ export default function SessionDetailLayout({
     setIsResizingChatPanel(true);
     event.preventDefault();
   };
-  const contextMenuSession = contextMenu
-    ? (sessionItems.find(item => item.id === contextMenu.sessionId) ?? null)
-    : null;
-  const contextMenuLifecycle = contextMenuSession?.handbookLifecycle ?? 'DRAFT';
 
   return (
     <div className="h-screen overflow-hidden bg-bg-primary text-text-primary">
@@ -395,7 +577,7 @@ export default function SessionDetailLayout({
 
         <div className="flex min-w-0 flex-1 overflow-hidden">
           <section className="ui-page-enter-down hidden min-h-0 min-w-0 flex-1 flex-col lg:flex">
-            <div className="px-5 pt-2">
+            <div className="relative z-20 px-5 pt-2">
               <div className="mx-auto flex h-[64px] items-center justify-center">
                 <div className="flex w-fit items-center gap-1.5 rounded-[14px] border border-border-light bg-bg-elevated px-1.5 py-1 shadow-[0_8px_24px_rgba(45,42,38,0.08)]">
                   <div className="flex items-center gap-0.5 rounded-[8px] bg-bg-secondary p-[3px]">
@@ -405,7 +587,7 @@ export default function SessionDetailLayout({
                         sessionEditorActions.setCenterViewMode(activeSessionId, 'blocks')
                       }
                       disabled={!hasBlocks}
-                      className={`inline-flex items-center gap-[5px] rounded-[6px] px-[10px] py-[6px] text-[12px] font-medium transition-colors ${
+                      className={`inline-flex h-10 items-center gap-[5px] rounded-[8px] px-[12px] text-[12px] font-medium transition-colors ${
                         centerViewMode === 'blocks'
                           ? 'bg-bg-elevated text-text-primary'
                           : 'bg-transparent text-text-tertiary hover:text-text-secondary'
@@ -420,14 +602,14 @@ export default function SessionDetailLayout({
                         sessionEditorActions.setCenterViewMode(activeSessionId, 'html')
                       }
                       disabled={!hasHtml}
-                      className={`inline-flex items-center gap-[5px] rounded-[6px] px-[10px] py-[6px] text-[12px] font-medium transition-colors ${
+                      className={`inline-flex h-10 items-center gap-[5px] rounded-[8px] px-[12px] text-[12px] font-medium transition-colors ${
                         centerViewMode === 'html'
                           ? 'bg-bg-elevated text-text-primary'
                           : 'bg-transparent text-text-tertiary hover:text-text-secondary'
                       } disabled:cursor-not-allowed disabled:opacity-40`}
                     >
                       <LuCode className="h-[14px] w-[14px]" />
-                      HTML
+                      Handbook
                     </button>
                   </div>
 
@@ -439,38 +621,48 @@ export default function SessionDetailLayout({
                           onClick={() =>
                             sessionEditorActions.setPreviewDevice(activeSessionId, 'desktop')
                           }
+                          onMouseEnter={event => showToolbarTooltip('Desktop View', event)}
+                          onMouseLeave={hideToolbarTooltip}
+                          onFocus={event => showToolbarTooltip('Desktop View', event)}
+                          onBlur={hideToolbarTooltip}
                           aria-pressed={previewDevice === 'desktop'}
-                          className={`inline-flex items-center gap-[5px] rounded-[6px] px-[10px] py-[6px] text-[12px] font-medium transition-colors ${
+                          className={`inline-flex h-10 w-10 items-center justify-center rounded-[8px] text-[12px] font-medium transition-colors ${
                             previewDevice === 'desktop'
                               ? 'bg-bg-elevated text-text-primary'
                               : 'bg-transparent text-text-tertiary hover:text-text-secondary'
                           }`}
                         >
                           <LuMonitor className="h-[14px] w-[14px]" />
-                          Desktop
                         </button>
                         <button
                           type="button"
                           onClick={() =>
                             sessionEditorActions.setPreviewDevice(activeSessionId, 'mobile')
                           }
+                          onMouseEnter={event => showToolbarTooltip('Mobile View', event)}
+                          onMouseLeave={hideToolbarTooltip}
+                          onFocus={event => showToolbarTooltip('Mobile View', event)}
+                          onBlur={hideToolbarTooltip}
                           aria-pressed={previewDevice === 'mobile'}
-                          className={`inline-flex items-center gap-[5px] rounded-[6px] px-[10px] py-[6px] text-[12px] font-medium transition-colors ${
+                          className={`inline-flex h-10 w-10 items-center justify-center rounded-[8px] text-[12px] font-medium transition-colors ${
                             previewDevice === 'mobile'
                               ? 'bg-bg-elevated text-text-primary'
                               : 'bg-transparent text-text-tertiary hover:text-text-secondary'
                           }`}
                         >
                           <LuSmartphone className="h-[14px] w-[14px]" />
-                          Mobile
                         </button>
                       </div>
 
                       <button
                         type="button"
                         onClick={refreshPreview}
+                        onMouseEnter={event => showToolbarTooltip('Refresh Handbook', event)}
+                        onMouseLeave={hideToolbarTooltip}
+                        onFocus={event => showToolbarTooltip('Refresh Handbook', event)}
+                        onBlur={hideToolbarTooltip}
                         disabled={!hasHtml}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#6B6560] transition hover:bg-bg-primary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Refresh"
                       >
                         <LuRefreshCw className="h-[18px] w-[18px]" />
@@ -478,47 +670,162 @@ export default function SessionDetailLayout({
                       <button
                         type="button"
                         onClick={openPreviewInNewTab}
+                        onMouseEnter={event =>
+                          showToolbarTooltip('Open handbook in new tab', event)
+                        }
+                        onMouseLeave={hideToolbarTooltip}
+                        onFocus={event =>
+                          showToolbarTooltip('Open handbook in new tab', event)
+                        }
+                        onBlur={hideToolbarTooltip}
                         disabled={!hasHtml}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#F0FDFA] text-[#0D9488] transition hover:bg-[#CCFBF1] disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Open in new tab"
                       >
                         <LuExternalLink className="h-[18px] w-[18px]" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void copyShareLink()}
-                        disabled={!isHandbookPublic}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
-                        aria-label="Copy public link"
-                      >
-                        <LuShare className="h-[18px] w-[18px]" />
-                      </button>
+                      <div className="relative" ref={handbookMenuRef}>
+                        <div className="inline-flex h-10 overflow-hidden rounded-[10px] bg-[#0D9488] text-text-inverse">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsHandbookMenuOpen(false);
+                              void updateHandbookLifecycle(
+                                activeSessionId,
+                                activeHandbookId,
+                                'PUBLIC',
+                              );
+                            }}
+                            onMouseEnter={event => showToolbarTooltip('Publish Handbook', event)}
+                            onMouseLeave={hideToolbarTooltip}
+                            onFocus={event => showToolbarTooltip('Publish Handbook', event)}
+                            onBlur={hideToolbarTooltip}
+                            disabled={!activeHandbookId || isHandbookPublic || !hasHtml || isUpdatingLifecycle}
+                            className="inline-flex h-10 items-center gap-2 px-[14px] text-[13px] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
+                          >
+                            {isUpdatingLifecycle ? (
+                              <LuLoader className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <LuGlobe className="h-4 w-4" />
+                              )}
+                            {isHandbookPublic
+                              ? 'Public'
+                              : 'Publish'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsHandbookMenuOpen(open => !open)}
+                            disabled={!activeHandbookId || isUpdatingLifecycle || isRemovingHandbook}
+                            className="inline-flex h-10 w-[34px] items-center justify-center border-l border-white/35 bg-[#0D9488] transition hover:bg-[#0B7F75] disabled:cursor-not-allowed disabled:opacity-45"
+                            aria-label="Handbook menu"
+                          >
+                            <LuChevronDown
+                              className={`h-4 w-4 transition-transform ${
+                                isHandbookMenuOpen ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
+                        {isHandbookMenuOpen && (
+                          <div className="absolute right-0 top-[44px] z-40 min-w-[170px] overflow-hidden rounded-[8px] border border-border-light bg-bg-elevated p-1 shadow-[0_8px_24px_rgba(45,42,38,0.12)]">
+                            <button
+                              type="button"
+                              onClick={requestRenameActiveHandbook}
+                              disabled={!activeHandbookId || isRemovingHandbook || isRenamingHandbook}
+                              className="flex w-full items-center gap-2.5 rounded-[6px] px-3 py-2 text-left text-[13px] text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <LuPencil className="h-[15px] w-[15px] text-[#6B6560]" />
+                              <span>Rename</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void updateHandbookLifecycle(activeSessionId, activeHandbookId, 'PUBLIC')
+                              }
+                              disabled={!activeHandbookId || handbookLifecycle === 'PUBLIC' || isUpdatingLifecycle || isRemovingHandbook || !hasHtml}
+                              className="flex w-full items-center gap-2.5 rounded-[6px] px-3 py-2 text-left text-[13px] text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <LuGlobe className="h-[15px] w-[15px] text-[#6B6560]" />
+                              <span>Set Public</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void updateHandbookLifecycle(activeSessionId, activeHandbookId, 'DRAFT')
+                              }
+                              disabled={!activeHandbookId || handbookLifecycle === 'DRAFT' || isUpdatingLifecycle || isRemovingHandbook}
+                              className="flex w-full items-center gap-2.5 rounded-[6px] px-3 py-2 text-left text-[13px] text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <LuFilePenLine className="h-[15px] w-[15px] text-[#6B6560]" />
+                              <span>Move to Draft</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void updateHandbookLifecycle(activeSessionId, activeHandbookId, 'ARCHIVED')
+                              }
+                              disabled={!activeHandbookId || handbookLifecycle === 'ARCHIVED' || isUpdatingLifecycle || isRemovingHandbook}
+                              className="flex w-full items-center gap-2.5 rounded-[6px] px-3 py-2 text-left text-[13px] text-text-primary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <LuArchive className="h-[15px] w-[15px] text-[#6B6560]" />
+                              <span>Archive</span>
+                            </button>
+                            <div className="mx-1 my-1 h-px bg-border-light" />
+                            <button
+                              type="button"
+                              onClick={requestDeleteActiveHandbook}
+                              disabled={!activeHandbookId || isRemovingHandbook}
+                              className="flex w-full items-center gap-2.5 rounded-[6px] px-3 py-2 text-left text-[13px] text-accent-secondary transition hover:bg-bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <LuTrash2 className="h-[15px] w-[15px]" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </>
                   ) : (
                     <>
                       <button
                         type="button"
                         onClick={() => dispatchCenterToolbarAction('export')}
+                        onMouseEnter={event =>
+                          showToolbarTooltip('Export Google Map CSV', event)
+                        }
+                        onMouseLeave={hideToolbarTooltip}
+                        onFocus={event =>
+                          showToolbarTooltip('Export Google Map CSV', event)
+                        }
+                        onBlur={hideToolbarTooltip}
                         disabled={!hasBlocks}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label="Export blocks"
+                        aria-label="Export Google Map CSV"
                       >
                         <LuDownload className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => dispatchCenterToolbarAction('save')}
+                        onMouseEnter={event => showToolbarTooltip('Save Block Data', event)}
+                        onMouseLeave={hideToolbarTooltip}
+                        onFocus={event => showToolbarTooltip('Save Block Data', event)}
+                        onBlur={hideToolbarTooltip}
                         disabled={!hasBlocks}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label="Save blocks"
+                        aria-label="Save Block Data"
                       >
                         <LuSave className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => dispatchCenterToolbarAction('generate')}
+                        onMouseEnter={event => showToolbarTooltip('Generate Handbook', event)}
+                        onMouseLeave={hideToolbarTooltip}
+                        onFocus={event => showToolbarTooltip('Generate Handbook', event)}
+                        onBlur={hideToolbarTooltip}
                         disabled={!hasBlocks || isProcessBusy}
                         className="inline-flex h-10 items-center gap-1.5 rounded-[10px] bg-accent-primary px-3.5 text-[13px] font-medium text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
+                        aria-label="Generate Handbook"
                       >
                         <LuSparkles className="h-4 w-4" />
                         Generate
@@ -551,7 +858,7 @@ export default function SessionDetailLayout({
           </div>
 
           <aside
-            className="h-screen w-full shrink-0 overflow-hidden bg-bg-elevated lg:min-w-[300px] lg:max-w-[600px] lg:w-[var(--chat-panel-width)]"
+            className="h-screen w-full shrink-0 overflow-hidden bg-bg-elevated lg:min-w-[300px] lg:max-w-[500px] lg:w-[var(--chat-panel-width)]"
             style={{
               ['--chat-panel-width' as string]: `${chatPanelWidth}px`,
             }}
@@ -561,18 +868,50 @@ export default function SessionDetailLayout({
         </div>
       </div>
 
+      {typeof document !== 'undefined' && toolbarTooltip
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[220] whitespace-nowrap rounded-[6px] bg-[rgba(17,24,39,0.92)] px-2 py-1 text-[11px] font-medium leading-none text-white shadow-[0_6px_16px_rgba(15,23,42,0.35)]"
+              style={{
+                top: toolbarTooltip.top,
+                left: toolbarTooltip.left,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {toolbarTooltip.label}
+            </div>,
+            document.body,
+          )
+        : null}
+
       <SessionContextMenu
         menu={contextMenu}
         menuRef={menuRef}
-        lifecycle={contextMenuLifecycle}
-        hasContextSession={Boolean(contextMenuSession)}
-        isUpdatingLifecycle={isUpdatingLifecycle}
-        lifecycleOptions={HANDBOOK_LIFECYCLE_OPTIONS}
         onRename={startRenameSession}
-        onLifecycleChange={(sessionId, lifecycle) => {
-          void updateHandbookLifecycle(sessionId, lifecycle);
-        }}
         onDelete={requestDeleteSession}
+      />
+      <DeleteConfirmationDialog
+        open={Boolean(pendingDeleteHandbookId)}
+        title="Delete Handbook?"
+        description={`Delete ${
+          (pendingDeleteHandbook?.title || '').trim() || 'this handbook'
+        }? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmDisabled={isRemovingHandbook}
+        onCancel={() => setPendingDeleteHandbookId(null)}
+        onConfirm={confirmDeleteActiveHandbook}
+      />
+      <RenameDialog
+        open={Boolean(pendingRenameHandbookId)}
+        title="Rename Handbook"
+        description="Set a new handbook name."
+        value={renameHandbookDraft}
+        placeholder="Handbook name"
+        confirmLabel="Save"
+        confirmDisabled={isRenamingHandbook || renameHandbookDraft.trim().length === 0}
+        onChange={setRenameHandbookDraft}
+        onCancel={cancelRenameActiveHandbook}
+        onConfirm={() => void confirmRenameActiveHandbook()}
       />
       <DeleteConfirmationDialog
         open={Boolean(pendingDeleteSession)}

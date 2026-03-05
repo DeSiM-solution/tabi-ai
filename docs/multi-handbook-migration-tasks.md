@@ -30,76 +30,76 @@
 
 ### Phase 0: 对齐与冻结范围
 
-- [ ] T0-1 确认术语映射：产品文案统一为 `Handbook`
-- [ ] T0-2 确认标识策略：不使用版本序号作为主标识，统一使用 `handbookId`
-- [ ] T0-3 锁定 UI 行为：切换 handbook、发布 handbook、分享当前 public handbook
-- [ ] T0-4 在 `docs/chat-flow.md`、`docs/process-management.md` 标注“即将迁移”章节
+- [x] T0-1 确认术语映射：产品文案统一为 `Handbook`（已在本文落地）
+- [x] T0-2 确认标识策略：不使用版本序号作为主标识，统一使用 `handbookId`（已在本文落地）
+- [x] T0-3 锁定 UI 行为：切换 handbook、发布 handbook、分享当前 public handbook（已在本文规则落地）
+- [x] T0-4 在 `docs/chat-flow.md`、`docs/process-management.md` 标注“即将迁移”章节（2026-03-03）
 
 ### Phase 1: 数据库改造（Prisma + Migration）
 
-- [ ] T1-1 新增 `Handbook` model（`id/sessionId/title/html/lifecycle/generatedAt/publishedAt/archivedAt/...`）
-- [ ] T1-2 给 `Session` 增加 `activeHandbookId`（可空）
-- [ ] T1-3 建索引：`sessionId+updatedAt`、`sessionId+lifecycle`、`lifecycle+publishedAt`
-- [ ] T1-4 保留 `SessionState` 现有字段以兼容旧逻辑（本阶段不删除旧字段）
-- [ ] T1-5 编写 migration SQL 与 Prisma schema 同步
-- [ ] T1-6 准备数据回填脚本：从 `SessionState.handbookHtml` 回填初始 `Handbook`
-- [ ] T1-7 回填后设置 `Session.activeHandbookId`
+- [x] T1-1 新增 `Handbook` model（`id/sessionId/title/html/lifecycle/generatedAt/publishedAt/archivedAt/...`）（`prisma/schema.prisma`）
+- [x] T1-2 给 `Session` 增加 `activeHandbookId`（可空）（`prisma/schema.prisma`）
+- [x] T1-3 建索引：`sessionId+updatedAt`、`sessionId+lifecycle`、`lifecycle+publishedAt`（`prisma/schema.prisma` + SQL）
+- [x] T1-4 保留 `SessionState` 现有字段以兼容旧逻辑（本阶段不删除旧字段，2026-03-03）
+- [x] T1-5 编写 migration SQL 与 Prisma schema 同步（`prisma/migrations/20260303_multi_handbook_phase1.sql`）
+- [x] T1-6 准备数据回填脚本：从 `SessionState.handbookHtml` 回填初始 `Handbook`（`scripts/backfill-session-handbooks.mjs`）
+- [x] T1-7 回填后设置 `Session.activeHandbookId`（已在回填脚本实现）
 
 ### Phase 2: 服务层改造（`src/server/sessions.ts`）
 
-- [ ] T2-1 新增 handbook 读写 DTO：summary/detail/preview/public
-- [ ] T2-2 新增服务方法：`listSessionHandbooks(sessionId,userId)`
-- [ ] T2-3 新增服务方法：`createSessionHandbook(sessionId,userId,payload)`
-- [ ] T2-4 新增服务方法：`updateSessionHandbook(handbookId,userId,patch)`
-- [ ] T2-5 新增服务方法：`setHandbookLifecycle(handbookId,userId,lifecycle)`
-- [ ] T2-6 新增服务方法：`setActiveHandbook(sessionId,userId,handbookId)`
-- [ ] T2-7 新增服务方法：`removeSessionHandbook(handbookId,userId)`
-- [ ] T2-8 保留旧的 session 级 handbook API 行为，内部代理到 `activeHandbook`
+- [x] T2-1 新增 handbook 读写 DTO：summary/detail/preview/public（`src/server/sessions.ts`）
+- [x] T2-2 新增服务方法：`listSessionHandbooks(sessionId,userId)`（`src/server/sessions.ts`）
+- [x] T2-3 新增服务方法：`createSessionHandbook(sessionId,userId,payload)`（`src/server/sessions.ts`）
+- [x] T2-4 新增服务方法：`updateSessionHandbook(handbookId,userId,patch)`（`src/server/sessions.ts`）
+- [x] T2-5 新增服务方法：`setHandbookLifecycle(handbookId,userId,lifecycle)`（`src/server/sessions.ts`）
+- [x] T2-6 新增服务方法：`setActiveHandbook(sessionId,userId,handbookId)`（`src/server/sessions.ts`）
+- [x] T2-7 新增服务方法：`removeSessionHandbook(handbookId,userId)`（`src/server/sessions.ts`）
+- [x] T2-8 保留旧的 session 级 handbook API 行为，内部代理到 `activeHandbook`（`src/server/sessions.ts`）
 
 ### Phase 3: API 路由改造（兼容优先）
 
-- [ ] T3-1 新增 `GET /api/sessions/[id]/handbooks`
-- [ ] T3-2 新增 `POST /api/sessions/[id]/handbooks`
-- [ ] T3-3 新增 `PATCH /api/sessions/[id]/handbooks/[handbookId]`
-- [ ] T3-4 新增 `DELETE /api/sessions/[id]/handbooks/[handbookId]`
-- [ ] T3-5 新增 `POST /api/sessions/[id]/handbooks/[handbookId]/activate`
-- [ ] T3-6 新增 `PATCH /api/sessions/[id]/handbooks/[handbookId]/lifecycle`
-- [ ] T3-7 新增 `GET /api/guide/[handbookId]`
-- [ ] T3-8 新增 `GET /api/public/guide/[handbookId]`
-- [ ] T3-9 兼容旧路径 `/api/guide/[sessionId]`：返回当前 `activeHandbook`
+- [x] T3-1 新增 `GET /api/sessions/[id]/handbooks`（`src/app/api/sessions/[id]/handbooks/route.ts`）
+- [x] T3-2 新增 `POST /api/sessions/[id]/handbooks`（`src/app/api/sessions/[id]/handbooks/route.ts`）
+- [x] T3-3 新增 `PATCH /api/sessions/[id]/handbooks/[handbookId]`（`src/app/api/sessions/[id]/handbooks/[handbookId]/route.ts`）
+- [x] T3-4 新增 `DELETE /api/sessions/[id]/handbooks/[handbookId]`（`src/app/api/sessions/[id]/handbooks/[handbookId]/route.ts`）
+- [x] T3-5 新增 `POST /api/sessions/[id]/handbooks/[handbookId]/activate`（`.../activate/route.ts`）
+- [x] T3-6 新增 `PATCH /api/sessions/[id]/handbooks/[handbookId]/lifecycle`（`.../lifecycle/route.ts`）
+- [x] T3-7 新增 `GET /api/guide/[handbookId]`（复用现有路由，服务层已支持 handbookId）
+- [x] T3-8 新增 `GET /api/public/guide/[handbookId]`（复用现有路由，服务层已支持 handbookId）
+- [x] T3-9 兼容旧路径 `/api/guide/[sessionId]`：返回当前 `activeHandbook`（服务层已兼容）
 
 ### Phase 4: Agent 持久化链路改造
 
-- [ ] T4-1 改造 `generate_handbook_html`：输出增加 `handbook_id`、`preview_url`
-- [ ] T4-2 生成 HTML 后写入 `Handbook`（创建新记录），不再只写 `SessionState.handbookHtml`
-- [ ] T4-3 `persistSessionSnapshot` 保持只写运行态快照（`context/blocks/toolOutputs`）
-- [ ] T4-4 保持 `requestHasGeneratedHandbook` 语义不变（本次请求至少产出一个 handbook）
-- [ ] T4-5 回归手动再生成功路径（已存在图片/无图片两种）
+- [x] T4-1 改造 `generate_handbook_html`：输出增加 `handbook_id`、`preview_url`（`src/agent/tools/generate-handbook-html.ts`）
+- [x] T4-2 生成 HTML 后写入 `Handbook`（创建新记录），不再只写 `SessionState.handbookHtml`（`src/agent/tools/generate-handbook-html.ts`）
+- [x] T4-3 `persistSessionSnapshot` 保持只写运行态快照（`context/blocks/toolOutputs`，2026-03-03）
+- [x] T4-4 保持 `requestHasGeneratedHandbook` 语义不变（本次请求至少产出一个 handbook）
+- [x] T4-5 回归手动再生成功路径（已存在图片/无图片两种；2026-03-03 18:38，`.env.local` 库执行 migration+backfill 后 smoke 通过：第 1 次 `search_image -> generate_handbook_html`，第 2 次仅 `generate_handbook_html`，`HB1_COUNT=1`、`HB2_COUNT=2`）
 
 ### Phase 5: 前端状态层改造（Store）
 
-- [ ] T5-1 `sessions-store` 增加 handbook 聚合信息（count/publicCount/activeHandbookId）
-- [ ] T5-2 新建或扩展 `handbooks-store`（按 sessionId 缓存 handbook 列表）
-- [ ] T5-3 `session-editor-store` 增加 `activeHandbookId` 与 handbook 级预览状态
-- [ ] T5-4 hydration 流程改造：先拉 session，再拉 handbooks，再恢复 active handbook
+- [x] T5-1 `sessions-store` 增加 handbook 聚合信息（count/publicCount/activeHandbookId，2026-03-03）
+- [x] T5-2 新建或扩展 `handbooks-store`（按 sessionId 缓存 handbook 列表，2026-03-03）
+- [x] T5-3 `session-editor-store` 增加 `activeHandbookId` 与 handbook 级预览状态（2026-03-03）
+- [x] T5-4 hydration 流程改造：先拉 session，再拉 handbooks，再恢复 active handbook（2026-03-03）
 
 ### Phase 6: 前端 UI 改造（按 `pencil-demo.pen`）
 
-- [ ] T6-1 详情页顶部接入 handbook 切换器（以 `handbookId` 选择当前项）
-- [ ] T6-2 接入 `Public` 按钮与禁用态（无 HTML 时不可发布）
-- [ ] T6-3 接入 `external-link` 动作（当前约定：复制 public 链接）
-- [ ] T6-4 接入 handbook context menu：rename/set public/move draft/archive/delete
-- [ ] T6-5 左侧 Session 列表展示 handbook 聚合信息（示例：`4 handbooks · 2 public`）
-- [ ] T6-6 HTML 预览地址改为 handbook 维度（`/api/guide/{handbookId}`）
-- [ ] T6-7 删除/切换 handbook 时处理空态与回退策略（自动切换到下一个可用项）
+- [x] T6-1 详情页顶部接入 handbook 切换器（以 `handbookId` 选择当前项，2026-03-03）
+- [x] T6-2 接入 `Public` 按钮与禁用态（无 HTML 时不可发布，2026-03-03）
+- [x] T6-3 接入 `external-link` 动作（当前约定：复制 public 链接，2026-03-03）
+- [x] T6-4 接入 handbook context menu：rename/set public/move draft/archive/delete（2026-03-03）
+- [x] T6-5 左侧 Session 列表展示 handbook 聚合信息（示例：`4 handbooks · 2 public`，2026-03-03）
+- [x] T6-6 HTML 预览地址改为 handbook 维度（`/api/guide/{handbookId}`，2026-03-03）
+- [x] T6-7 删除/切换 handbook 时处理空态与回退策略（自动切换到下一个可用项，2026-03-03）
 
 ### Phase 7: 兼容清理与文档更新
 
-- [ ] T7-1 清理 session 级 lifecycle 的旧调用路径
-- [ ] T7-2 清理 `SessionState` 中不再使用的 handbook 字段（在确认稳定后）
-- [ ] T7-3 更新 `docs/chat-flow.md` 为多-handbook 新流程
-- [ ] T7-4 更新 `docs/process-management.md` 的数据模型与接口章节
-- [ ] T7-5 增补运维说明：回填脚本、回滚策略、观测指标
+- [x] T7-1 清理 session 级 lifecycle 的旧调用路径（2026-03-03，前端首页/详情页统一改为 handbook 级 lifecycle API，移除 `/api/sessions/{id}/handbook-lifecycle` 的调用）
+- [x] T7-2 清理 `SessionState` 中不再使用的 session 级 handbook lifecycle 字段（2026-03-04，移除 `handbookLifecycle/handbookPublishedAt/handbookArchivedAt`）
+- [x] T7-3 更新 `docs/chat-flow.md` 为多-handbook 新流程（2026-03-03）
+- [x] T7-4 更新 `docs/process-management.md` 的数据模型与接口章节（2026-03-03）
+- [x] T7-5 增补运维说明：回填脚本、回滚策略、观测指标（2026-03-03，写入 `docs/process-management.md` 第 8 章）
 
 ## 4. 验收标准（DoD）
 

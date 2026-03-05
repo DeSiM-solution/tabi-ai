@@ -58,7 +58,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetBrainsMono.variable} ${notoSansJp.variable} ${playfairDisplay.variable} ${dancingScript.variable} antialiased`}
       >
         {children}
-        <Toaster position="top-center" richColors />
+        <Toaster position="bottom-right" richColors />
       </body>
     </html>
   );

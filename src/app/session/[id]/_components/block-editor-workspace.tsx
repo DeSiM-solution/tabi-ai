@@ -25,6 +25,7 @@ import {
   LuEllipsisVertical,
 } from 'react-icons/lu';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
+import { withTooltip } from '@/lib/tooltip';
 import {
   BLOCK_TYPES,
   createBlockId,
@@ -41,8 +42,6 @@ interface FloatingToolbarPosition {
   top: number;
   left: number;
 }
-
-type TooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
 const BLOCK_TYPE_META: Record<
   (typeof BLOCK_TYPES)[number],
@@ -97,24 +96,7 @@ function normalizeTag(raw: string): string {
   return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
 }
 
-const TOOLTIP_BASE_CLASS =
-  'after:pointer-events-none after:absolute after:z-[120] after:whitespace-nowrap after:rounded-[6px] after:bg-[rgba(17,24,39,0.92)] after:px-2 after:py-1 after:text-[11px] after:font-medium after:leading-none after:text-white after:opacity-0 after:shadow-[0_6px_16px_rgba(15,23,42,0.35)] after:transition-opacity after:duration-150 after:content-[attr(data-tooltip)] hover:after:opacity-100 focus-visible:after:opacity-100';
-const TOOLTIP_SIDE_CLASS: Record<TooltipSide, string> = {
-  top: 'after:left-1/2 after:top-0 after:-translate-x-1/2 after:-translate-y-[calc(100%+8px)]',
-  right:
-    'after:left-full after:top-1/2 after:ml-2 after:-translate-y-1/2',
-  bottom:
-    'after:left-1/2 after:bottom-0 after:-translate-x-1/2 after:translate-y-[calc(100%+8px)]',
-  left:
-    'after:right-full after:top-1/2 after:mr-2 after:-translate-y-1/2',
-};
 const TOOLBAR_CLOSE_SCROLL_THRESHOLD = 56;
-
-function withTooltip(className: string, side: TooltipSide = 'top'): string {
-  const hasPositionClass = /\b(absolute|relative|fixed|sticky)\b/.test(className);
-  const anchorClass = hasPositionClass ? '' : ' relative';
-  return `${className}${anchorClass} ${TOOLTIP_BASE_CLASS} ${TOOLTIP_SIDE_CLASS[side]}`;
-}
 
 export function BlockEditorWorkspace({
   session,
@@ -282,6 +264,14 @@ export function BlockEditorWorkspace({
       smart_tags: [],
       latInput: '',
       lngInput: '',
+      imageUrl: '',
+      imageAlt: '',
+      imageQuery: '',
+      imageSource: '',
+      imageSourcePage: '',
+      imageCredit: '',
+      imageWidth: null,
+      imageHeight: null,
       newTagInput: '',
     };
   };
@@ -451,6 +441,18 @@ export function BlockEditorWorkspace({
     updateBlock(index, current => ({
       ...current,
       description: rawText.trim(),
+    }));
+  };
+  const commitImageUrl = (index: number, rawText: string) => {
+    updateBlock(index, current => ({
+      ...current,
+      imageUrl: rawText.trim(),
+    }));
+  };
+  const commitImageAlt = (index: number, rawText: string) => {
+    updateBlock(index, current => ({
+      ...current,
+      imageAlt: rawText.trim(),
     }));
   };
   const commitGuideTitle = (rawText: string) => {
@@ -740,6 +742,42 @@ export function BlockEditorWorkspace({
                       >
                         {block.description.trim() || typeMeta.descriptionPlaceholder}
                       </div>
+
+                      {isActive ? (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-[11px] font-medium text-text-tertiary">
+                            Block Image URL (Optional)
+                          </div>
+                          <input
+                            value={block.imageUrl}
+                            onChange={event =>
+                              updateBlock(index, current => ({
+                                ...current,
+                                imageUrl: event.currentTarget.value,
+                              }))
+                            }
+                            onBlur={event =>
+                              commitImageUrl(index, event.currentTarget.value)
+                            }
+                            className="h-9 w-full rounded-[9px] border border-border-default bg-bg-elevated px-3 text-[12px] text-text-primary outline-none transition focus:border-accent-primary"
+                            placeholder="https://example.com/cover.jpg"
+                          />
+                          <input
+                            value={block.imageAlt}
+                            onChange={event =>
+                              updateBlock(index, current => ({
+                                ...current,
+                                imageAlt: event.currentTarget.value,
+                              }))
+                            }
+                            onBlur={event =>
+                              commitImageAlt(index, event.currentTarget.value)
+                            }
+                            className="h-9 w-full rounded-[9px] border border-border-default bg-bg-elevated px-3 text-[12px] text-text-primary outline-none transition focus:border-accent-primary"
+                            placeholder="Image alt text (optional)"
+                          />
+                        </div>
+                      ) : null}
 
                       {isActive ? (
                         <>
