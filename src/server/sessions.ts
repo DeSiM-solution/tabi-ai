@@ -562,17 +562,6 @@ export async function listPublicSessionSummariesByUserId(
         description: true,
         createdAt: true,
         updatedAt: true,
-        activeHandbookId: true,
-        activeHandbook: {
-          select: {
-            id: true,
-            lifecycle: true,
-            publishedAt: true,
-            sourceContext: true,
-            sourceToolOutputs: true,
-            sourceBlocks: true,
-          },
-        },
         handbooks: {
           where: { lifecycle: HANDBOOK_LIFECYCLE_STATUS.PUBLIC },
           orderBy: [
@@ -600,11 +589,7 @@ export async function listPublicSessionSummariesByUserId(
     });
 
     return sessions.reduce<PublicSessionSummaryDto[]>((acc, session) => {
-        const activePublicHandbook =
-          session.activeHandbook?.lifecycle === HANDBOOK_LIFECYCLE_STATUS.PUBLIC
-            ? session.activeHandbook
-            : null;
-        const publicHandbook = activePublicHandbook ?? session.handbooks[0] ?? null;
+        const publicHandbook = session.handbooks[0] ?? null;
         if (!publicHandbook) return acc;
 
         const thumbnailUrl =

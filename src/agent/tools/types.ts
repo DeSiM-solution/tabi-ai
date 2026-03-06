@@ -169,6 +169,7 @@ export const spotQueryOutputSchema = z.object({
 export type SpotQueryOutput = z.infer<typeof spotQueryOutputSchema>;
 
 export const handbookInputSchema = z.object({
+  handbookId: z.string().optional(),
   title: z.string().optional(),
   videoId: z.string().optional(),
   videoUrl: z.string().optional(),

@@ -10,7 +10,6 @@ import {
   LuArrowRight,
   LuChevronDown,
   LuCheck,
-  LuLoader,
   LuRefreshCw,
   LuSendHorizontal,
   LuTrash2,
@@ -51,7 +50,8 @@ import {
 } from '@/stores/handbooks-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
-import { formatSessionDate } from '@/lib/session-time';
+import { formatSessionDate, formatSessionDateTime } from '@/lib/session-time';
+import { withTooltip } from '@/lib/tooltip';
 import {
   getHandbookStyleInstruction,
   getHandbookStyleLabel,
@@ -63,18 +63,30 @@ import {
   type HandbookLifecycle,
 } from '@/lib/handbook-lifecycle';
 import { AestheticStyleSelector } from '@/components/aesthetic-style-selector';
+import { ConfirmationDialog } from '@/components/confirmation-dialog';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 
 const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
   'build_travel_blocks',
   'resolve_spot_coordinates',
 ]);
+const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
+const LEGACY_HANDBOOK_INPUT_JSON_MARKER = 'HANDBOOK_INPUT_JSON:';
+const GENERATING_HANDBOOK_TITLE = 'Generating Handbook...';
+const GENERATING_HANDBOOK_PLACEHOLDER_HTML = [
+  '<!doctype html>',
+  '<html lang="en">',
+  '<head><meta charset="utf-8"><title>Generating Handbook</title></head>',
+  '<body><main><p>Generating Handbook...</p></main></body>',
+  '</html>',
+].join('');
 function toStyleSelection(value: HandbookStyleId | null | undefined): HandbookStyleId {
   return value ?? 'minimal-tokyo';
 }
 
 type SessionHydrationPayload = {
   session?: {
+    status?: string;
     messages?: UIMessage[];
     state?: {
       context?: unknown;
@@ -85,32 +97,138 @@ type SessionHydrationPayload = {
   };
 };
 
-const sessionDetailHydrationInFlight = new Map<
-  string,
-  Promise<SessionHydrationPayload | null>
->();
+type PendingGeneratingHandbookVersion = {
+  handbookId: string;
+  title: string;
+  createdAt: string;
+  previousActiveHandbookId: string | null;
+  persisted: boolean;
+};
+
+type HandbookVersionMenuItem = {
+  id: string;
+  title: string;
+  lifecycle: HandbookLifecycle;
+  createdAt: string;
+  isPending: boolean;
+  isGenerating: boolean;
+};
+
+const SESSION_MESSAGE_CACHE_KEY_PREFIX = 'session-message-cache:';
+const SESSION_MESSAGE_CACHE_VERSION = 1;
+
+type SessionMessageCacheRecord = {
+  version: number;
+  savedAt: number;
+  messages: UIMessage[];
+};
+
+function getSessionMessageCacheKey(sessionId: string): string {
+  return `${SESSION_MESSAGE_CACHE_KEY_PREFIX}${sessionId}`;
+}
+
+function isValidMessageRole(value: unknown): value is UIMessage['role'] {
+  return value === 'user' || value === 'assistant' || value === 'system';
+}
+
+function isValidUIMessage(value: unknown): value is UIMessage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === 'string'
+    && isValidMessageRole(record.role)
+    && Array.isArray(record.parts)
+  );
+}
+
+function readCachedSessionMessages(sessionId: string): UIMessage[] {
+  if (typeof window === 'undefined') return [];
+  const cacheKey = getSessionMessageCacheKey(sessionId);
+  const raw = window.sessionStorage.getItem(cacheKey);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as SessionMessageCacheRecord;
+    if (
+      parsed?.version !== SESSION_MESSAGE_CACHE_VERSION
+      || !Array.isArray(parsed.messages)
+    ) {
+      return [];
+    }
+    if (!parsed.messages.every(isValidUIMessage)) return [];
+    return parsed.messages;
+  } catch {
+    return [];
+  }
+}
+
+function persistCachedSessionMessages(sessionId: string, messages: UIMessage[]): void {
+  if (typeof window === 'undefined') return;
+  if (!sessionId || messages.length === 0) return;
+  const cacheKey = getSessionMessageCacheKey(sessionId);
+  const payload: SessionMessageCacheRecord = {
+    version: SESSION_MESSAGE_CACHE_VERSION,
+    savedAt: Date.now(),
+    messages,
+  };
+
+  try {
+    window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+  } catch {
+    // Ignore cache write failures (quota/private mode); hydration can still use API payload.
+  }
+}
+
+function isMessageSequencePrefix(
+  prefix: UIMessage[],
+  full: UIMessage[],
+): boolean {
+  if (prefix.length > full.length) return false;
+  for (let index = 0; index < prefix.length; index += 1) {
+    const prefixMessage = prefix[index];
+    const fullMessage = full[index];
+    if (!fullMessage) return false;
+    if (prefixMessage.id !== fullMessage.id) return false;
+    if (prefixMessage.role !== fullMessage.role) return false;
+  }
+  return true;
+}
+
+function resolveHydratedMessages(
+  persistedMessages: UIMessage[],
+  cachedMessages: UIMessage[],
+  sessionStatus: string | undefined,
+): UIMessage[] {
+  if (cachedMessages.length === 0) return persistedMessages;
+  if (persistedMessages.length === 0) return cachedMessages;
+
+  const normalizedStatus = sessionStatus?.toUpperCase() ?? '';
+  if (normalizedStatus !== 'RUNNING') return persistedMessages;
+
+  const persistedIsPrefixOfCache = isMessageSequencePrefix(
+    persistedMessages,
+    cachedMessages,
+  );
+  if (
+    persistedIsPrefixOfCache
+    && cachedMessages.length > persistedMessages.length
+  ) {
+    return cachedMessages;
+  }
+
+  return persistedMessages;
+}
 
 async function fetchSessionHydrationPayload(
   sessionId: string,
 ): Promise<SessionHydrationPayload | null> {
-  const pending = sessionDetailHydrationInFlight.get(sessionId);
-  if (pending) return pending;
-
-  const request = (async () => {
-    const response = await fetch(`/api/sessions/${sessionId}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as SessionHydrationPayload;
-  })();
-
-  const wrapped = request.finally(() => {
-    sessionDetailHydrationInFlight.delete(sessionId);
+  const response = await fetch(`/api/sessions/${sessionId}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
   });
-  sessionDetailHydrationInFlight.set(sessionId, wrapped);
-  return wrapped;
+  if (!response.ok) return null;
+  return (await response.json()) as SessionHydrationPayload;
 }
 
 function toGuidePreviewPath(path: string, fallbackHandbookId: string): string {
@@ -172,6 +290,16 @@ function getHandbookLifecycleBadgeClass(lifecycle: HandbookLifecycle): string {
     return 'border border-[#DDD6CF] bg-[#F6F3F0] text-[#6B6560]';
   }
   return 'border border-[#EAD8B6] bg-[#FFF7E8] text-[#9A5B13]';
+}
+
+function toHandbookCreatedAtTooltip(createdAt: string | null | undefined): string {
+  const normalized = typeof createdAt === 'string' ? createdAt.trim() : '';
+  if (!normalized) return 'Created at: Unknown';
+  const timestamp = Date.parse(normalized);
+  if (!Number.isNaN(timestamp)) {
+    return `Created at: ${formatSessionDateTime(timestamp)}`;
+  }
+  return `Created at: ${normalized}`;
 }
 
 function extractSessionTitleFromToolOutput(
@@ -397,7 +525,11 @@ function toPersistedBlocksOutput(
     );
 
   const preferredResolveOutput = persistedToolOutputs?.resolve_spot_coordinates;
-  if (isRecord(preferredResolveOutput) && Array.isArray(preferredResolveOutput.blocks)) {
+  if (
+    isRecord(preferredResolveOutput)
+    && Array.isArray(preferredResolveOutput.blocks)
+    && preferredResolveOutput.blocks.length > 0
+  ) {
     return {
       sourceKey: 'persisted:resolve_spot_coordinates',
       toolName: 'resolve_spot_coordinates',
@@ -406,7 +538,11 @@ function toPersistedBlocksOutput(
   }
 
   const preferredBuildOutput = persistedToolOutputs?.build_travel_blocks;
-  if (isRecord(preferredBuildOutput) && Array.isArray(preferredBuildOutput.blocks)) {
+  if (
+    isRecord(preferredBuildOutput)
+    && Array.isArray(preferredBuildOutput.blocks)
+    && preferredBuildOutput.blocks.length > 0
+  ) {
     return {
       sourceKey: 'persisted:build_travel_blocks',
       toolName: 'build_travel_blocks',
@@ -415,6 +551,7 @@ function toPersistedBlocksOutput(
   }
 
   if (!Array.isArray(state.blocks)) return null;
+  if (state.blocks.length === 0) return null;
 
   const fallbackSpotBlocks = Array.isArray(state.spotBlocks)
     ? state.spotBlocks
@@ -464,9 +601,49 @@ function countGenerateHandbookOutputs(messages: UIMessage[]): number {
   return count;
 }
 
+function toEditorSessionSignature(session: EditorSession): string {
+  return JSON.stringify(applyEditorSession(session));
+}
+
+function isGeneratingHandbookPlaceholderTitle(value: string | null | undefined): boolean {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized === GENERATING_HANDBOOK_TITLE;
+}
+
+function compactChatMessagesForChatApi(messages: UIMessage[]): UIMessage[] {
+  let changed = false;
+  const nextMessages = messages.map(message => {
+    if (message.role !== 'user') return message;
+    let messageChanged = false;
+    const nextParts = message.parts.map(part => {
+      if (part.type !== 'text') return part;
+      const raw = part.text;
+      const trimmed = raw.trim();
+      if (
+        trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX) &&
+        trimmed.includes(LEGACY_HANDBOOK_INPUT_JSON_MARKER)
+      ) {
+        changed = true;
+        messageChanged = true;
+        return {
+          ...part,
+          text: `${MANUAL_HANDBOOK_PROMPT_PREFIX}\nUse latest session state.`,
+        };
+      }
+      return part;
+    });
+    if (!messageChanged) return message;
+    return {
+      ...message,
+      parts: nextParts,
+    };
+  });
+  return changed ? nextMessages : messages;
+}
+
 function MainContentLoadingState({ label }: { label: string }) {
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-primary px-6 text-center">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary px-6 text-center">
       <div className="flex flex-col items-center gap-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-text-primary">
           <span className="font-japanese text-[34px] font-semibold leading-none text-text-inverse">
@@ -535,6 +712,12 @@ export default function Chat() {
   const [pendingDeleteHandbookVersionId, setPendingDeleteHandbookVersionId] = useState<
     string | null
   >(null);
+  const [pendingGeneratingHandbookVersion, setPendingGeneratingHandbookVersion] = useState<
+    PendingGeneratingHandbookVersion | null
+  >(null);
+  const [isGeneratingNewHandbook, setIsGeneratingNewHandbook] = useState(false);
+  const [isEditorDirty, setIsEditorDirty] = useState(false);
+  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
   const [htmlPreviewLoadPhase, setHtmlPreviewLoadPhase] = useState<
     'idle' | 'loading' | 'revealing'
   >('idle');
@@ -552,6 +735,16 @@ export default function Chat() {
   const activeHydrationSessionRef = useRef<string | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
   const imageBackfillAttemptKeyRef = useRef<string | null>(null);
+  const pendingGeneratingHandbookVersionRef =
+    useRef<PendingGeneratingHandbookVersion | null>(null);
+  const lastSavedEditorSignatureRef = useRef<{
+    sourceKey: string;
+    signature: string;
+  } | null>(null);
+  const isEditorDirtyRef = useRef(false);
+  const allowUnsafeLeaveRef = useRef(false);
+  const pendingLeaveActionRef = useRef<(() => void) | null>(null);
+  const suppressNextPopStateRef = useRef(false);
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoScrolledSessionRef = useRef<string | null>(null);
   const pendingAutoScrollSessionRef = useRef<string | null>(null);
@@ -570,14 +763,32 @@ export default function Chat() {
     transport: chatTransport,
   });
   const isBusy = status === 'submitted' || status === 'streaming';
+  const isPendingGeneratingHandbookActive = Boolean(
+    pendingGeneratingHandbookVersion
+    && activeHandbookId === pendingGeneratingHandbookVersion.handbookId,
+  );
+  const activePersistedHandbookSummary = activeHandbookId
+    ? (
+      sessionHandbooksState.handbooks.find(handbook => handbook.id === activeHandbookId)
+      ?? null
+    )
+    : null;
+  const isPersistedGeneratingHandbookActive = isGeneratingHandbookPlaceholderTitle(
+    activePersistedHandbookSummary?.title,
+  );
+  const isGeneratingHandbookAddressState =
+    isPendingGeneratingHandbookActive || isPersistedGeneratingHandbookActive;
   const guidePreviewPath = activeHandbookId
     ? `/api/guide/${activeHandbookId}`
     : sessionId
       ? `/api/guide/${sessionId}`
       : '/api/guide';
   const previewAddress = useMemo(
-    () => toPreviewAddress(handbookPreviewUrl, guidePreviewPath),
-    [guidePreviewPath, handbookPreviewUrl],
+    () =>
+      isGeneratingHandbookAddressState
+        ? 'Generating Handbook...'
+        : toPreviewAddress(handbookPreviewUrl, guidePreviewPath),
+    [guidePreviewPath, handbookPreviewUrl, isGeneratingHandbookAddressState],
   );
   const previewFrameWidth = previewDevice === 'mobile' ? 375 : 720;
   const previewFrameMaxHeight = 'calc(100vh - 128px)';
@@ -678,6 +889,83 @@ export default function Chat() {
     chatScrollAnimationFrameRef.current = window.requestAnimationFrame(animate);
   }, [stopChatScrollAnimation]);
 
+  const markEditorSessionAsSaved = useCallback((session: EditorSession) => {
+    lastSavedEditorSignatureRef.current = {
+      sourceKey: session.sourceKey,
+      signature: toEditorSessionSignature(session),
+    };
+    setIsEditorDirty(false);
+  }, []);
+
+  const clearPendingGeneratingHandbookVersion = useCallback((
+    options?: {
+      nextActiveHandbookId?: string | null;
+      restorePreviousActive?: boolean;
+      removePersisted?: boolean;
+    },
+  ) => {
+    const pending = pendingGeneratingHandbookVersionRef.current;
+    if (!pending || !sessionId) return;
+
+    sessionEditorActions.removeHandbookState(sessionId, pending.handbookId);
+
+    if (options?.nextActiveHandbookId !== undefined) {
+      sessionEditorActions.setActiveHandbookId(
+        sessionId,
+        options.nextActiveHandbookId ?? null,
+      );
+    } else if (options?.restorePreviousActive) {
+      sessionEditorActions.setActiveHandbookId(
+        sessionId,
+        pending.previousActiveHandbookId ?? null,
+      );
+    }
+
+    if (options?.removePersisted && pending.persisted) {
+      void handbooksActions.removeHandbook(sessionId, pending.handbookId)
+        .then(() => {
+          if (!options.restorePreviousActive) return;
+          if (!pending.previousActiveHandbookId) return;
+          return handbooksActions.setActiveHandbook(
+            sessionId,
+            pending.previousActiveHandbookId,
+          );
+        })
+        .catch(error => {
+          console.error('[chat-ui] remove-pending-handbook-failed', {
+            sessionId,
+            handbookId: pending.handbookId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
+
+    pendingGeneratingHandbookVersionRef.current = null;
+    setPendingGeneratingHandbookVersion(null);
+  }, [sessionId]);
+
+  const requestLeaveWithUnsavedWarning = useCallback((action: () => void) => {
+    pendingLeaveActionRef.current = action;
+    setIsLeaveConfirmOpen(true);
+  }, []);
+
+  const cancelLeaveWithUnsavedWarning = useCallback(() => {
+    pendingLeaveActionRef.current = null;
+    setIsLeaveConfirmOpen(false);
+  }, []);
+
+  const confirmLeaveWithUnsavedWarning = useCallback(() => {
+    const action = pendingLeaveActionRef.current;
+    pendingLeaveActionRef.current = null;
+    setIsLeaveConfirmOpen(false);
+    allowUnsafeLeaveRef.current = true;
+    action?.();
+
+    window.setTimeout(() => {
+      allowUnsafeLeaveRef.current = false;
+    }, 1000);
+  }, []);
+
   const requireLogin = useCallback((description: string): boolean => {
     if (!isGuestUser) return true;
     toast.warning('Please login to continue.', {
@@ -706,8 +994,8 @@ export default function Chat() {
     return null;
   }, [messages]);
 
-  const patchSessionState = useCallback(async (patch: Record<string, unknown>) => {
-    if (!sessionId) return;
+  const patchSessionState = useCallback(async (patch: Record<string, unknown>): Promise<boolean> => {
+    if (!sessionId) return false;
 
     try {
       const response = await fetch(`/api/sessions/${sessionId}/state`, {
@@ -718,24 +1006,29 @@ export default function Chat() {
       if (!response.ok) {
         throw new Error(`Failed to patch session state (${response.status})`);
       }
+      return true;
     } catch (error) {
       console.error('[chat-ui] patch-session-state-failed', {
         sessionId,
         message: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   }, [sessionId]);
 
-  const persistEditorOutput = useCallback((session: EditorSession, output: UnknownRecord) => {
+  const persistEditorOutput = useCallback(async (
+    session: EditorSession,
+    output: UnknownRecord,
+  ): Promise<boolean> => {
     const blocks = Array.isArray(output.blocks) ? output.blocks : undefined;
     const spotBlocks = Array.isArray(output.spot_blocks) ? output.spot_blocks : undefined;
     const toolOutputs = PERSISTABLE_BLOCK_TOOL_NAMES.has(session.toolName)
       ? { [session.toolName]: output }
       : undefined;
 
-    if (!blocks && !spotBlocks && !toolOutputs) return;
+    if (!blocks && !spotBlocks && !toolOutputs) return true;
 
-    void patchSessionState({
+    return patchSessionState({
       blocks,
       spotBlocks,
       toolOutputs,
@@ -757,6 +1050,16 @@ export default function Chat() {
     setIsSessionHydrating(true);
     setHandbookStyle(null);
     setMessages([]);
+    setPendingGeneratingHandbookVersion(null);
+    setIsGeneratingNewHandbook(false);
+    setIsEditorDirty(false);
+    setIsLeaveConfirmOpen(false);
+    pendingLeaveActionRef.current = null;
+    allowUnsafeLeaveRef.current = false;
+    suppressNextPopStateRef.current = false;
+    lastSavedEditorSignatureRef.current = null;
+    pendingGeneratingHandbookVersionRef.current = null;
+    sessionActions.reset();
     sessionActions.setSessionId(sessionId);
     sessionEditorActions.ensureSession(sessionId);
     handbooksActions.ensureSession(sessionId);
@@ -808,10 +1111,115 @@ export default function Chat() {
   }, [editedToolOutputs, isBusy, messages, sessionId]);
 
   useEffect(() => {
+    if (!editorSession) {
+      setIsEditorDirty(false);
+      lastSavedEditorSignatureRef.current = null;
+      return;
+    }
+
+    const currentSignature = toEditorSessionSignature(editorSession);
+    const saved = lastSavedEditorSignatureRef.current;
+    if (!saved || saved.sourceKey !== editorSession.sourceKey) {
+      lastSavedEditorSignatureRef.current = {
+        sourceKey: editorSession.sourceKey,
+        signature: currentSignature,
+      };
+      setIsEditorDirty(false);
+      return;
+    }
+
+    setIsEditorDirty(saved.signature !== currentSignature);
+  }, [editorSession]);
+
+  useEffect(() => {
+    isEditorDirtyRef.current = isEditorDirty;
+  }, [isEditorDirty]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target as Element | null;
+      if (!target) return;
+      const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.hasAttribute('download')) return;
+      if (anchor.target && anchor.target.toLowerCase() !== '_self') return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+
+      const currentUrl = new URL(window.location.href);
+      const nextUrl = new URL(anchor.href, currentUrl);
+      if (nextUrl.href === currentUrl.href) return;
+
+      event.preventDefault();
+      requestLeaveWithUnsavedWarning(() => {
+        const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+        if (nextUrl.origin !== currentUrl.origin) {
+          window.location.assign(nextUrl.toString());
+          return;
+        }
+        router.push(nextPath);
+      });
+    };
+
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick, true);
+    };
+  }, [requestLeaveWithUnsavedWarning, router]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (suppressNextPopStateRef.current) {
+        suppressNextPopStateRef.current = false;
+        return;
+      }
+      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
+
+      window.history.go(1);
+      requestLeaveWithUnsavedWarning(() => {
+        suppressNextPopStateRef.current = true;
+        window.history.back();
+      });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [requestLeaveWithUnsavedWarning]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (isSessionHydrating) return;
+    if (messages.length === 0) return;
+    persistCachedSessionMessages(sessionId, messages);
+  }, [isSessionHydrating, messages, sessionId]);
+
+  useEffect(() => {
     if (!sessionId) return;
     sessionEditorActions.hydrateHandbooks(sessionId, {
       activeHandbookId: sessionHandbooksState.activeHandbookId,
       handbooks: sessionHandbooksState.handbooks.map(handbook => {
+        const generatingPlaceholder = isGeneratingHandbookPlaceholderTitle(handbook.title);
         const basePreviewPath = handbook.previewPath
           ? toGuidePreviewPath(handbook.previewPath, handbook.id)
           : `/api/guide/${handbook.id}`;
@@ -820,8 +1228,8 @@ export default function Chat() {
           handbookId: handbook.id,
           title: handbook.title,
           lifecycle: handbook.lifecycle,
-          previewUrl: `${basePreviewPath}?v=${cacheVersion}`,
-          status: 'ready',
+          previewUrl: generatingPlaceholder ? null : `${basePreviewPath}?v=${cacheVersion}`,
+          status: generatingPlaceholder ? 'generating' : 'ready',
           error: null,
         };
       }),
@@ -875,8 +1283,18 @@ export default function Chat() {
         if (activeHydrationSessionRef.current !== sessionId) return;
 
         hydratedSessionRef.current = sessionId;
-        if (Array.isArray(payload.session?.messages) && payload.session.messages.length > 0) {
-          setMessages(payload.session.messages);
+        const persistedMessages = Array.isArray(payload.session?.messages)
+          ? payload.session.messages
+          : [];
+        const cachedMessages = readCachedSessionMessages(sessionId);
+        const hydratedMessages = resolveHydratedMessages(
+          persistedMessages,
+          cachedMessages,
+          payload.session?.status,
+        );
+        const compactedHydratedMessages = compactChatMessagesForChatApi(hydratedMessages);
+        if (compactedHydratedMessages.length > 0) {
+          setMessages(compactedHydratedMessages);
         }
 
         const handbookPayload = await handbooksActions.hydrateSession(sessionId);
@@ -921,7 +1339,7 @@ export default function Chat() {
             persistedEditable.toolName,
             persistedEditable.output,
           );
-          if (restoredEditorSession) {
+          if (restoredEditorSession && restoredEditorSession.blocks.length > 0) {
             sessionEditorActions.setEditorSession(sessionId, restoredEditorSession);
             if (resolvedHandbooks.length === 0) {
               sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
@@ -1054,7 +1472,7 @@ export default function Chat() {
     sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
   };
 
-  const saveEditor = useCallback((session: EditorSession) => {
+  const saveEditor = useCallback(async (session: EditorSession) => {
     if (!requireLogin('Editing blocks requires an account login.')) return;
     if (!sessionId) return;
     const nextOutput = applyEditorSession(session);
@@ -1063,13 +1481,19 @@ export default function Chat() {
       session.sourceKey,
       nextOutput,
     );
-    persistEditorOutput(session, nextOutput);
+    const saved = await persistEditorOutput(session, nextOutput);
+    if (!saved) {
+      toast.error('Failed to save blocks. Please try again.');
+      return;
+    }
+    markEditorSessionAsSaved(session);
+    toast.success('Blocks saved.');
     console.log('[chat-ui] blocks-saved', {
       sourceKey: session.sourceKey,
       toolName: session.toolName,
       blockCount: Array.isArray(nextOutput.blocks) ? nextOutput.blocks.length : 0,
     });
-  }, [persistEditorOutput, requireLogin, sessionId]);
+  }, [markEditorSessionAsSaved, persistEditorOutput, requireLogin, sessionId]);
 
   const exportEditorCsv = useCallback((session: EditorSession) => {
     const nextOutput = applyEditorSession(session);
@@ -1098,7 +1522,7 @@ export default function Chat() {
     window.URL.revokeObjectURL(url);
   }, []);
 
-  const generateHandbookFromEditor = useCallback((
+  const generateHandbookFromEditor = useCallback(async (
     session: EditorSession,
     options?: {
       forcedStyle?: HandbookStyleId;
@@ -1122,44 +1546,124 @@ export default function Chat() {
     const styleLabel = getHandbookStyleLabel(styleId);
     const styleInstruction = getHandbookStyleInstruction(styleId);
 
-    const payload = {
-      title: session.title,
-      videoId: session.videoId,
-      videoUrl: session.videoUrl,
-      thumbnailUrl: session.thumbnailUrl,
-      blocks,
-      images: Array.isArray(nextOutput.images) ? nextOutput.images : [],
-      handbookStyle: styleId,
-    };
-
     sessionEditorActions.upsertEditedToolOutput(
       sessionId,
       session.sourceKey,
       nextOutput,
     );
-    sessionEditorActions.setHandbookStatus(sessionId, 'generating', activeHandbookId);
-    sessionEditorActions.setHandbookError(sessionId, null, activeHandbookId);
+    const synced = await persistEditorOutput(session, nextOutput);
+    if (!synced) {
+      toast.error('Failed to sync blocks before generating handbook.');
+      return;
+    }
+
+    const compactedMessages = compactChatMessagesForChatApi(messages);
+    const shouldDelaySendAfterCompaction = compactedMessages !== messages;
+    if (shouldDelaySendAfterCompaction) {
+      setMessages(compactedMessages);
+    }
+
+    let persistedPendingHandbookId: string | null = null;
+    try {
+      const placeholderHandbook = await handbooksActions.createHandbook(sessionId, {
+        title: GENERATING_HANDBOOK_TITLE,
+        html: GENERATING_HANDBOOK_PLACEHOLDER_HTML,
+        lifecycle: 'DRAFT',
+        previewPath: null,
+        sourceContext: {
+          handbookGenerationStatus: 'pending',
+        },
+        style: styleId,
+        thumbnailUrl: session.thumbnailUrl ?? null,
+        setActive: true,
+      });
+      persistedPendingHandbookId = placeholderHandbook?.id ?? null;
+    } catch (error) {
+      console.error('[chat-ui] create-generating-placeholder-failed', error);
+      toast.error('Failed to prepare generating handbook version.');
+      return;
+    }
+    if (!persistedPendingHandbookId) {
+      toast.error('Failed to prepare generating handbook version.');
+      return;
+    }
+
+    const nextPendingVersion: PendingGeneratingHandbookVersion = {
+      handbookId: persistedPendingHandbookId,
+      title: GENERATING_HANDBOOK_TITLE,
+      createdAt: new Date().toISOString(),
+      previousActiveHandbookId: activeHandbookId ?? null,
+      persisted: true,
+    };
+    const previousPendingVersion = pendingGeneratingHandbookVersionRef.current;
+    if (previousPendingVersion) {
+      sessionEditorActions.removeHandbookState(sessionId, previousPendingVersion.handbookId);
+      if (previousPendingVersion.persisted) {
+        void handbooksActions.removeHandbook(
+          sessionId,
+          previousPendingVersion.handbookId,
+        ).catch(error => {
+          console.error('[chat-ui] remove-previous-pending-handbook-failed', error);
+        });
+      }
+    }
+    pendingGeneratingHandbookVersionRef.current = nextPendingVersion;
+    setPendingGeneratingHandbookVersion(nextPendingVersion);
+    setIsGeneratingNewHandbook(true);
+    setHtmlPreviewLoadPhase('idle');
+    sessionEditorActions.setHandbookHtml(sessionId, null, nextPendingVersion.handbookId);
+    sessionEditorActions.setHandbookPreviewUrl(sessionId, null, nextPendingVersion.handbookId);
+    sessionEditorActions.setHandbookStatus(
+      sessionId,
+      'generating',
+      nextPendingVersion.handbookId,
+    );
+    sessionEditorActions.setHandbookError(sessionId, null, nextPendingVersion.handbookId);
+    sessionEditorActions.setActiveHandbookId(sessionId, nextPendingVersion.handbookId);
     sessionEditorActions.setCenterViewMode(sessionId, 'html');
 
+    const handbookInputOverrides = {
+      handbookId: nextPendingVersion.handbookId,
+      title: session.title,
+      videoId: session.videoId,
+      videoUrl: session.videoUrl,
+      thumbnailUrl: session.thumbnailUrl,
+      handbookStyle: styleId,
+    };
     const prompt = [
-      'Generate handbook HTML from edited blocks.',
-      'If runtime already has prepared images from a completed search_image or generate_image step, reuse them and do not call an image tool again.',
-      'If no prepared images are available, call exactly one image tool first: search_image or generate_image.',
-      'Prefer search_image for real landmarks, cities, food, and architecture; use generate_image when stock photos are not suitable.',
-      'After image tool finishes, call generate_handbook_html exactly once using HANDBOOK_INPUT_JSON as tool input.',
+      MANUAL_HANDBOOK_PROMPT_PREFIX,
+      'Use the latest session state as handbook input (blocks/spot_blocks/tool_outputs).',
+      'Do not inline blocks/images in tool input.',
+      'If prepared images are missing, call exactly one image tool first, then generate_handbook_html once.',
       'Do not call parse_youtube_input, crawl_youtube_videos, build_travel_blocks, or resolve_spot_coordinates.',
       `Use handbook style: ${styleLabel}.`,
       styleInstruction
         ? `Style direction: ${styleInstruction}`
         : 'If style is "Let Tabi decide", choose the most fitting visual style from the content.',
       'HANDBOOK_INPUT_JSON:',
-      JSON.stringify(payload),
+      JSON.stringify(handbookInputOverrides),
     ].join('\n');
     pendingToolbarGenerationRef.current = {
-      beforeCount: countGenerateHandbookOutputs(messages),
+      beforeCount: countGenerateHandbookOutputs(compactedMessages),
     };
+    if (shouldDelaySendAfterCompaction) {
+      window.setTimeout(() => {
+        sendMessage({ text: prompt });
+      }, 0);
+      return;
+    }
     sendMessage({ text: prompt });
-  }, [activeHandbookId, handbookStyle, isBusy, messages, requireLogin, sendMessage, sessionId]);
+  }, [
+    activeHandbookId,
+    handbookStyle,
+    isBusy,
+    messages,
+    persistEditorOutput,
+    requireLogin,
+    sendMessage,
+    sessionId,
+    setMessages,
+  ]);
 
   const openStyleConfirmModal = useCallback((session: EditorSession) => {
     if (!requireLogin('Manual HTML generation requires an account login.')) return;
@@ -1268,16 +1772,26 @@ export default function Chat() {
     }
 
     if (handbookStatus === 'generating') {
-      sessionEditorActions.setHandbookStatus(sessionId, 'error', activeHandbookId);
+      const pending = pendingGeneratingHandbookVersionRef.current;
+      const errorTargetHandbookId = pending?.previousActiveHandbookId ?? activeHandbookId;
+      if (pending) {
+        clearPendingGeneratingHandbookVersion({
+          restorePreviousActive: true,
+          removePersisted: true,
+        });
+      }
+      setIsGeneratingNewHandbook(false);
+      sessionEditorActions.setHandbookStatus(sessionId, 'error', errorTargetHandbookId);
       sessionEditorActions.setHandbookError(
         sessionId,
         'Generation did not reach generate_handbook_html. Please click Generate again.',
-        activeHandbookId,
+        errorTargetHandbookId,
       );
       sessionEditorActions.setCenterViewMode(sessionId, 'html');
     }
   }, [
     activeHandbookId,
+    clearPendingGeneratingHandbookVersion,
     handbookHtml,
     handbookPreviewUrl,
     handbookStatus,
@@ -1321,12 +1835,22 @@ export default function Chat() {
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
             if (!isRecord(output)) {
+              const pending = pendingGeneratingHandbookVersionRef.current;
+              const errorTargetHandbookId = pending?.previousActiveHandbookId ?? null;
+              if (pending) {
+                clearPendingGeneratingHandbookVersion({
+                  restorePreviousActive: true,
+                  removePersisted: true,
+                });
+              }
               sessionEditorActions.setHandbookStatus(sessionId, 'error');
               sessionEditorActions.setHandbookError(
                 sessionId,
                 'Handbook tool returned invalid HTML output.',
+                errorTargetHandbookId,
               );
               sessionEditorActions.setCenterViewMode(sessionId, 'html');
+              setIsGeneratingNewHandbook(false);
               return;
             }
             const handbookId =
@@ -1335,7 +1859,15 @@ export default function Chat() {
                 : null;
             const targetHandbookId = handbookId ?? activeHandbookId ?? null;
             if (handbookId) {
-              sessionEditorActions.setActiveHandbookId(sessionId, handbookId);
+              const pending = pendingGeneratingHandbookVersionRef.current;
+              clearPendingGeneratingHandbookVersion({
+                nextActiveHandbookId: handbookId,
+                removePersisted: Boolean(
+                  pending
+                  && pending.persisted
+                  && pending.handbookId !== handbookId,
+                ),
+              });
               void handbooksActions.hydrateSession(sessionId);
             }
             const rawPreviewUrl =
@@ -1357,6 +1889,13 @@ export default function Chat() {
                 ? output.html
                 : null;
             if (!inlineHtml && !previewUrl) {
+              const pending = pendingGeneratingHandbookVersionRef.current;
+              if (pending) {
+                clearPendingGeneratingHandbookVersion({
+                  restorePreviousActive: true,
+                  removePersisted: true,
+                });
+              }
               sessionEditorActions.setHandbookStatus(sessionId, 'error');
               sessionEditorActions.setHandbookError(
                 sessionId,
@@ -1370,6 +1909,7 @@ export default function Chat() {
             sessionEditorActions.setHandbookPreviewUrl(sessionId, previewUrl, targetHandbookId);
             sessionEditorActions.setHandbookStatus(sessionId, 'ready', targetHandbookId);
             sessionEditorActions.setHandbookError(sessionId, null, targetHandbookId);
+            setIsGeneratingNewHandbook(false);
             sessionEditorActions.setCenterViewMode(sessionId, 'html');
           }
         }
@@ -1382,13 +1922,22 @@ export default function Chat() {
 
           if (toolName === 'generate_handbook_html') {
             if (!sessionId) return;
-            sessionEditorActions.setHandbookStatus(sessionId, 'error', activeHandbookId);
-            sessionEditorActions.setHandbookPreviewUrl(sessionId, null, activeHandbookId);
+            const pending = pendingGeneratingHandbookVersionRef.current;
+            const errorTargetHandbookId = pending?.previousActiveHandbookId ?? activeHandbookId;
+            if (pending) {
+              clearPendingGeneratingHandbookVersion({
+                restorePreviousActive: true,
+                removePersisted: true,
+              });
+            }
+            sessionEditorActions.setHandbookStatus(sessionId, 'error', errorTargetHandbookId);
+            sessionEditorActions.setHandbookPreviewUrl(sessionId, null, errorTargetHandbookId);
             sessionEditorActions.setHandbookError(
               sessionId,
               part.errorText || 'Failed to generate handbook HTML.',
-              activeHandbookId,
+              errorTargetHandbookId,
             );
+            setIsGeneratingNewHandbook(false);
             sessionEditorActions.setCenterViewMode(sessionId, 'html');
           }
         }
@@ -1396,6 +1945,7 @@ export default function Chat() {
     }
   }, [
     activeHandbookId,
+    clearPendingGeneratingHandbookVersion,
     currentSessionSummary?.title,
     editedToolOutputs,
     messages,
@@ -1423,6 +1973,10 @@ export default function Chat() {
 
         const nextEditorSession = createEditorSession(sourceKey, toolName, output);
         if (!nextEditorSession) {
+          autoOpenedEditableSourceRef.current.add(sourceKey);
+          continue;
+        }
+        if (nextEditorSession.blocks.length === 0) {
           autoOpenedEditableSourceRef.current.add(sourceKey);
           continue;
         }
@@ -1474,6 +2028,7 @@ export default function Chat() {
           mergedSession.sourceKey,
           applyEditorSession(mergedSession),
         );
+        markEditorSessionAsSaved(mergedSession);
       } catch (error) {
         console.warn('[chat-ui] editor-image-backfill-failed', {
           sessionId,
@@ -1487,7 +2042,7 @@ export default function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [centerViewMode, editorSession, sessionId]);
+  }, [centerViewMode, editorSession, markEditorSessionAsSaved, sessionId]);
 
   const headerSubtitle = processState.stopped
     ? `Stopped at ${formatToolLabel(processState.currentStep)}`
@@ -1501,13 +2056,44 @@ export default function Chat() {
 
   const showBlocksView = centerViewMode === 'blocks';
   const showHtmlView = centerViewMode === 'html';
+  const handbookVersionMenuItems = useMemo<HandbookVersionMenuItem[]>(() => {
+    const persistedItems = sessionHandbooksState.handbooks.map(handbook => ({
+      id: handbook.id,
+      title: handbook.title,
+      lifecycle: handbook.lifecycle,
+      createdAt: handbook.createdAt,
+      isPending: false,
+      isGenerating: isGeneratingHandbookPlaceholderTitle(handbook.title),
+    }));
+    if (!pendingGeneratingHandbookVersion) return persistedItems;
+    if (persistedItems.some(item => item.id === pendingGeneratingHandbookVersion.handbookId)) {
+      return persistedItems;
+    }
+    return [
+      {
+        id: pendingGeneratingHandbookVersion.handbookId,
+        title: pendingGeneratingHandbookVersion.title,
+        lifecycle: 'DRAFT',
+        createdAt: pendingGeneratingHandbookVersion.createdAt,
+        isPending: true,
+        isGenerating: handbookStatus === 'generating' || isGeneratingNewHandbook,
+      },
+      ...persistedItems,
+    ];
+  }, [
+    handbookStatus,
+    isGeneratingNewHandbook,
+    pendingGeneratingHandbookVersion,
+    sessionHandbooksState.handbooks,
+  ]);
   const activeHandbook = activeHandbookId
     ? (
-      sessionHandbooksState.handbooks.find(
+      handbookVersionMenuItems.find(
         handbook => handbook.id === activeHandbookId,
       ) ?? null
     )
     : null;
+  const isGeneratingHandbookActive = Boolean(activeHandbook?.isGenerating);
   const pendingDeleteHandbookVersion = pendingDeleteHandbookVersionId
     ? (
       sessionHandbooksState.handbooks.find(
@@ -1515,11 +2101,21 @@ export default function Chat() {
       ) ?? null
     )
     : null;
+  const isSessionSummaryLoading = currentSessionSummary?.status === 'loading';
+  const shouldShowBlocksLoadingByProcess =
+    (isSessionSummaryLoading || processState.loading) &&
+    !processState.error &&
+    !processState.failedStep;
   const showBlocksLoadingState = Boolean(
     showBlocksView &&
       !editorSession &&
-      !processState.error &&
-      !processState.failedStep,
+      shouldShowBlocksLoadingByProcess,
+  );
+  const showNewHandbookLoadingState = Boolean(
+    showHtmlView &&
+      !isSessionHydrating &&
+      handbookStatus === 'generating' &&
+      (isGeneratingNewHandbook || isGeneratingHandbookActive),
   );
   const centerLoadingLabel = 'Loading guide...';
   const shouldRenderPreviewPortal = Boolean(
@@ -1530,6 +2126,24 @@ export default function Chat() {
       handbookPreviewUrl ||
       handbookStatus !== 'idle',
   );
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (centerViewMode === 'blocks') return;
+    if (isSessionHydrating) return;
+    if (!isSessionSummaryLoading && !processState.loading) return;
+    if (editorSession || handbookHtml || handbookPreviewUrl) return;
+    sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
+  }, [
+    centerViewMode,
+    editorSession,
+    handbookHtml,
+    handbookPreviewUrl,
+    isSessionHydrating,
+    isSessionSummaryLoading,
+    processState.loading,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (!isVersionMenuOpen) return;
@@ -1571,11 +2185,16 @@ export default function Chat() {
       setIsVersionMenuOpen(false);
       return;
     }
+    const previousActiveHandbookId = activeHandbookId;
+    sessionEditorActions.setActiveHandbookId(sessionId, nextHandbookId);
+    setIsVersionMenuOpen(false);
     try {
       await handbooksActions.setActiveHandbook(sessionId, nextHandbookId);
-      sessionEditorActions.setActiveHandbookId(sessionId, nextHandbookId);
-      setIsVersionMenuOpen(false);
     } catch (error) {
+      sessionEditorActions.setActiveHandbookId(
+        sessionId,
+        previousActiveHandbookId ?? null,
+      );
       console.error('[chat-ui] activate-handbook-version-failed', error);
       toast.error(error instanceof Error ? error.message : 'Failed to switch handbook.');
     }
@@ -1673,6 +2292,10 @@ export default function Chat() {
                     message={message}
                     editedToolOutputs={editedToolOutputs}
                     handbookStyle={handbookStyle}
+                    isRequestBusy={isBusy}
+                    hasRenderableHandbook={
+                      handbookStatus === 'ready' || Boolean(handbookPreviewUrl || handbookHtml)
+                    }
                     onOpenEditor={openEditor}
                   />
                 </div>
@@ -1693,7 +2316,16 @@ export default function Chat() {
             return;
           }
 
-          sendMessage({ text: prompt });
+          const compactedMessages = compactChatMessagesForChatApi(messages);
+          const shouldDelaySendAfterCompaction = compactedMessages !== messages;
+          if (shouldDelaySendAfterCompaction) {
+            setMessages(compactedMessages);
+            window.setTimeout(() => {
+              sendMessage({ text: prompt });
+            }, 0);
+          } else {
+            sendMessage({ text: prompt });
+          }
           setInput('');
           setInputError('');
         }}
@@ -1771,7 +2403,7 @@ export default function Chat() {
                           type="button"
                           onClick={() => setIsVersionMenuOpen(open => !open)}
                           disabled={
-                            sessionHandbooksState.handbooks.length === 0
+                            handbookVersionMenuItems.length === 0
                             || isSessionHydrating
                             || isRemovingHandbookVersion
                           }
@@ -1800,9 +2432,12 @@ export default function Chat() {
                           />
                         </button>
                         {isVersionMenuOpen && (
-                          <div className="absolute left-0 right-0 top-full z-30 w-full overflow-hidden rounded-b-[10px] rounded-t-none border border-border-light border-t-0 bg-bg-elevated p-1">
-                            {sessionHandbooksState.handbooks.map(handbook => {
+                          <div className="absolute left-0 right-0 top-full z-30 w-full overflow-visible rounded-b-[10px] rounded-t-none border border-border-light border-t-0 bg-bg-elevated p-1">
+                            {handbookVersionMenuItems.map(handbook => {
                               const selected = handbook.id === activeHandbookId;
+                              const createdAtTooltip = toHandbookCreatedAtTooltip(
+                                handbook.createdAt,
+                              );
                               return (
                                 <div
                                   key={handbook.id}
@@ -1812,13 +2447,26 @@ export default function Chat() {
                                 >
                                   <button
                                     type="button"
-                                    onClick={() => void activateHandbookVersion(handbook.id)}
+                                    onClick={() => {
+                                      if (handbook.isPending) {
+                                        sessionEditorActions.setActiveHandbookId(
+                                          sessionId,
+                                          handbook.id,
+                                        );
+                                        setIsVersionMenuOpen(false);
+                                        return;
+                                      }
+                                      void activateHandbookVersion(handbook.id);
+                                    }}
                                     className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-[8px] py-[4px] text-left"
                                   >
                                     <span
-                                      className={`inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
-                                        handbook.lifecycle,
-                                      )}`}
+                                      data-tooltip={createdAtTooltip}
+                                      className={withTooltip(
+                                        `inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
+                                          handbook.lifecycle,
+                                        )}`,
+                                      )}
                                     >
                                       {getHandbookLifecycleStatusLabel(handbook.lifecycle)}
                                     </span>
@@ -1827,19 +2475,26 @@ export default function Chat() {
                                         {handbook.title || 'Untitled guide'}
                                       </span>
                                       <span className="block truncate text-[11px] text-text-secondary">
-                                        {`/api/guide/${handbook.id}`}
+                                        {handbook.isGenerating
+                                          ? 'Generating Handbook...'
+                                          : `/api/guide/${handbook.id}`}
                                       </span>
                                     </span>
+                                    {handbook.isGenerating && (
+                                      <LuRefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-primary" />
+                                    )}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => requestDeleteHandbookVersion(handbook.id)}
-                                    disabled={isRemovingHandbookVersion}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#9C968F] transition hover:bg-bg-elevated hover:text-accent-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label={`Delete ${handbook.title || 'Untitled guide'}`}
-                                  >
-                                    <LuTrash2 className="h-[14px] w-[14px]" />
-                                  </button>
+                                  {!handbook.isPending && (
+                                    <button
+                                      type="button"
+                                      onClick={() => requestDeleteHandbookVersion(handbook.id)}
+                                      disabled={isRemovingHandbookVersion}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#9C968F] transition hover:bg-bg-elevated hover:text-accent-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                                      aria-label={`Delete ${handbook.title || 'Untitled guide'}`}
+                                    >
+                                      <LuTrash2 className="h-[14px] w-[14px]" />
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1849,7 +2504,7 @@ export default function Chat() {
                     </div>
 
                     <div className="relative h-[calc(100%-40px)] overflow-hidden bg-bg-elevated">
-                      {handbookPreviewUrl && (
+                      {!showNewHandbookLoadingState && handbookPreviewUrl && (
                         <iframe
                           title="Guide Preview"
                           src={handbookPreviewUrl}
@@ -1859,7 +2514,7 @@ export default function Chat() {
                         />
                       )}
 
-                      {!handbookPreviewUrl && handbookHtml && (
+                      {!showNewHandbookLoadingState && !handbookPreviewUrl && handbookHtml && (
                         <iframe
                           title="Guide Preview"
                           srcDoc={handbookHtml}
@@ -1867,6 +2522,17 @@ export default function Chat() {
                           onLoad={handleHtmlPreviewLoad}
                           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                         />
+                      )}
+
+                      {showNewHandbookLoadingState && (
+                        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white">
+                          <div className="flex flex-col items-center gap-2">
+                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
+                            <p className="text-[13px] font-medium text-text-secondary">
+                              Generating Handbook...
+                            </p>
+                          </div>
+                        </div>
                       )}
 
                       {showHtmlPreviewOverlay && (
@@ -1890,12 +2556,15 @@ export default function Chat() {
                         </div>
                       )}
 
-                      {!handbookPreviewUrl && !handbookHtml && handbookStatus === 'generating' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated">
-                          <div className="flex min-w-[190px] flex-col items-center gap-2 rounded-[12px] border border-border-light bg-bg-elevated px-5 py-4 shadow-[0_8px_24px_rgba(45,42,38,0.08)]">
-                            <LuLoader className="h-5 w-5 animate-spin text-accent-primary" />
-                            <p className="text-[12px] font-medium text-text-tertiary">
-                              Generating guide HTML...
+                      {!showNewHandbookLoadingState &&
+                        !handbookPreviewUrl &&
+                        !handbookHtml &&
+                        handbookStatus === 'generating' && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white">
+                          <div className="flex flex-col items-center gap-2">
+                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
+                            <p className="text-[13px] font-medium text-text-secondary">
+                              Generating Handbook...
                             </p>
                           </div>
                         </div>
@@ -2040,6 +2709,15 @@ export default function Chat() {
         confirmDisabled={isRemovingHandbookVersion}
         onCancel={() => setPendingDeleteHandbookVersionId(null)}
         onConfirm={confirmDeleteHandbookVersion}
+      />
+      <ConfirmationDialog
+        open={isLeaveConfirmOpen}
+        title="Unsaved Block Changes"
+        description="You have unsaved block edits. Leave this page and discard changes?"
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        onCancel={cancelLeaveWithUnsavedWarning}
+        onConfirm={confirmLeaveWithUnsavedWarning}
       />
     </div>
   );

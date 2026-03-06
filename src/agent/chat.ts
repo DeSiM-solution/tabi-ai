@@ -126,10 +126,24 @@ function getBlockingFailedTools(runtime: AgentRuntimeState): PersistedToolName[]
 }
 
 export async function executeChat(req: Request, userId: string): Promise<Response> {
-  const payload = (await req.json()) as {
+  let payload: {
     messages?: UIMessage[];
     sessionId?: string;
   };
+  try {
+    payload = (await req.json()) as {
+      messages?: UIMessage[];
+      sessionId?: string;
+    };
+  } catch (error) {
+    console.error('[chat_api] invalid-request-json', {
+      message: toErrorMessage(error),
+    });
+    return new Response(
+      'Invalid or oversized request body. Please retry with a smaller payload.',
+      { status: 413 },
+    );
+  }
   const rawMessages = Array.isArray(payload.messages) ? payload.messages : [];
   const sanitizedInput = sanitizeIncomingMessages(rawMessages);
   const messages = sanitizedInput.messages;

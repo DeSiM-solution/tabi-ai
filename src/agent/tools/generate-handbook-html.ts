@@ -5,11 +5,19 @@ import {
   getHandbookStyleLabel,
   normalizeHandbookStyle,
 } from '@/lib/handbook-style';
-import { createSessionHandbook } from '@/server/sessions';
+import {
+  createSessionHandbook,
+  setActiveHandbook,
+  updateSessionHandbook,
+} from '@/server/sessions';
 import { persistSessionSnapshot } from '@/agent/context/persistence';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
-import { handbookHtmlPrompt, handbookHtmlSystemPrompt } from '@/agent/prompts/handbook-html';
+import {
+  handbookHtmlPrompt,
+  handbookHtmlSystemPrompt,
+  type HandbookPromptImageAsset,
+} from '@/agent/prompts/handbook-html';
 import { handbookImageAssetSchema, handbookInputSchema } from './types';
 import {
   appendOriginVideoLink,
@@ -138,13 +146,20 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           );
         }
         const promptImageUrlReplacements = new Map<string, string>();
-        const imagesForPrompt = preparedImages.map(image => {
-          if (!image.image_url.startsWith('data:')) return image;
-          const placeholderUrl = `https://tabi.invalid/generated/${encodeURIComponent(image.block_id)}.png`;
-          promptImageUrlReplacements.set(placeholderUrl, image.image_url);
+        const imagesForPrompt: HandbookPromptImageAsset[] = preparedImages.map(image => {
+          let promptImageUrl = image.image_url;
+          if (image.image_url.startsWith('data:')) {
+            promptImageUrl =
+              `https://tabi.invalid/generated/${encodeURIComponent(image.block_id)}.png`;
+            promptImageUrlReplacements.set(promptImageUrl, image.image_url);
+          }
           return {
-            ...image,
-            image_url: placeholderUrl,
+            block_id: image.block_id,
+            block_title: image.block_title,
+            alt: image.alt,
+            image_url: promptImageUrl,
+            width: image.width ?? null,
+            height: image.height ?? null,
           };
         });
         const promptImageByBlockId = new Map(imagesForPrompt.map(image => [image.block_id, image]));
@@ -245,26 +260,55 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         ctx.runtime.requestHasGeneratedHandbook = true;
         let handbookId: string | null = null;
         if (ctx.sessionId && ctx.userId) {
-          const createdHandbook = await createSessionHandbook(ctx.sessionId, ctx.userId, {
-            title: resolvedTitle,
-            html,
-            lifecycle: 'DRAFT',
-            previewPath: null,
-            sourceContext: {
-              video: ctx.runtime.latestVideoContext,
-              apifyVideos: ctx.runtime.latestApifyVideos,
-              handbookStyle,
-              handbookStyleLabel,
-            },
-            sourceBlocks: effectiveBlocks,
-            sourceSpotBlocks: spotBlocks,
-            sourceToolOutputs: ctx.runtime.latestToolOutputs,
-            style: handbookStyle,
-            thumbnailUrl: resolvedThumbnailUrl,
-            generatedAt: new Date(),
-            setActive: true,
-          });
-          handbookId = createdHandbook?.id ?? null;
+          const requestedHandbookId =
+            typeof input.handbookId === 'string' && input.handbookId.trim()
+              ? input.handbookId.trim()
+              : null;
+          if (requestedHandbookId) {
+            const updatedHandbook = await updateSessionHandbook(requestedHandbookId, ctx.userId, {
+              title: resolvedTitle,
+              html,
+              previewPath: null,
+              sourceContext: {
+                video: ctx.runtime.latestVideoContext,
+                apifyVideos: ctx.runtime.latestApifyVideos,
+                handbookStyle,
+                handbookStyleLabel,
+              },
+              sourceBlocks: effectiveBlocks,
+              sourceSpotBlocks: spotBlocks,
+              sourceToolOutputs: ctx.runtime.latestToolOutputs,
+              style: handbookStyle,
+              thumbnailUrl: resolvedThumbnailUrl,
+              generatedAt: new Date(),
+            });
+            if (updatedHandbook && updatedHandbook.sessionId === ctx.sessionId) {
+              handbookId = updatedHandbook.id;
+              await setActiveHandbook(ctx.sessionId, ctx.userId, updatedHandbook.id);
+            }
+          }
+          if (!handbookId) {
+            const createdHandbook = await createSessionHandbook(ctx.sessionId, ctx.userId, {
+              title: resolvedTitle,
+              html,
+              lifecycle: 'DRAFT',
+              previewPath: null,
+              sourceContext: {
+                video: ctx.runtime.latestVideoContext,
+                apifyVideos: ctx.runtime.latestApifyVideos,
+                handbookStyle,
+                handbookStyleLabel,
+              },
+              sourceBlocks: effectiveBlocks,
+              sourceSpotBlocks: spotBlocks,
+              sourceToolOutputs: ctx.runtime.latestToolOutputs,
+              style: handbookStyle,
+              thumbnailUrl: resolvedThumbnailUrl,
+              generatedAt: new Date(),
+              setActive: true,
+            });
+            handbookId = createdHandbook?.id ?? null;
+          }
 
           await persistSessionSnapshot(ctx.sessionId, ctx.userId, ctx.runtime);
         }

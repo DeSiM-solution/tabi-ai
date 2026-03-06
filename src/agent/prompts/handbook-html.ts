@@ -5,6 +5,11 @@ import type {
   VideoContext,
 } from '@/agent/tools/types';
 
+export type HandbookPromptImageAsset = Pick<
+  HandbookImageAsset,
+  'block_id' | 'block_title' | 'alt' | 'image_url' | 'width' | 'height'
+>;
+
 export function handbookHtmlSystemPrompt(options: {
   handbookStyleInstruction: string | null;
 }): string {
@@ -19,6 +24,7 @@ export function handbookHtmlSystemPrompt(options: {
     'Use only provided handbook_images[].image_url values for images.',
     'Do not invent new image URLs.',
     'Each block section should render its matched image when available.',
+    'Do not render image metadata fields such as query/source/source_page/credit/model/provider.',
     'If thumbnailUrl is provided in input, render it exactly once as the top hero/header image.',
     'If thumbnailUrl is null or empty, do not render any top thumbnail/hero image section.',
     'Use the provided thumbnailUrl as-is, do not replace it with another URL.',
@@ -40,9 +46,9 @@ export function handbookHtmlPrompt(options: {
   videoContext: VideoContext | null;
   thumbnailUrl: string | null;
   blocks: TravelBlock[];
-  blocksWithImages: Array<TravelBlock & { image: HandbookImageAsset | null }>;
+  blocksWithImages: Array<TravelBlock & { image: HandbookPromptImageAsset | null }>;
   spotBlocks: SpotBlock[];
-  images: HandbookImageAsset[];
+  images: HandbookPromptImageAsset[];
   imageMode: 'search_image' | 'generate_image' | null;
   handbookStyle: string;
   handbookStyleLabel: string;

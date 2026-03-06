@@ -506,10 +506,7 @@ export function toGuidePrompt(raw: string): string | null {
 
 function isManualHandbookPrompt(raw: string): boolean {
   const trimmed = raw.trim();
-  return (
-    trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX) &&
-    trimmed.includes('HANDBOOK_INPUT_JSON:')
-  );
+  return trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX);
 }
 
 function toFirstSentence(raw: string): string {
@@ -711,29 +708,7 @@ export function getToolJsonPanel(
   }
 
   if (toolName === 'generate_handbook_html') {
-    if (!isRecord(output)) return null;
-    const summary = {
-      title: typeof output.title === 'string' ? output.title : '',
-      videoId: typeof output.videoId === 'string' ? output.videoId : '',
-      videoUrl: typeof output.videoUrl === 'string' ? output.videoUrl : '',
-      thumbnailUrl:
-        typeof output.thumbnailUrl === 'string' ? output.thumbnailUrl : null,
-      block_count:
-        typeof output.block_count === 'number' ? output.block_count : null,
-      spot_count: typeof output.spot_count === 'number' ? output.spot_count : null,
-      image_count:
-        typeof output.image_count === 'number' ? output.image_count : null,
-      image_mode:
-        typeof output.image_mode === 'string' ? output.image_mode : null,
-      generated_at:
-        typeof output.generated_at === 'string' ? output.generated_at : '',
-      html_length:
-        typeof output.html_length === 'number' ? output.html_length : null,
-    };
-    return {
-      title: 'generate_handbook_html output',
-      value: JSON.stringify(summary, null, 2),
-    };
+    return null;
   }
 
   return null;
@@ -798,8 +773,7 @@ export function getToolSummary(toolName: string, part: ToolPart, output: unknown
   }
 
   if (toolName === 'generate_handbook_html') {
-    const htmlLength = getNumberField(output, 'html_length');
-    return `Generated handbook HTML (${htmlLength ?? 0} chars)`;
+    return '';
   }
 
   return 'Completed';

@@ -17,6 +17,7 @@ import remarkGfm from 'remark-gfm';
 import {
   AUTO_HANDBOOK_STYLE,
   getHandbookStyleLabel,
+  normalizeHandbookStyle,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
 import {
@@ -46,13 +47,34 @@ interface ToolCardProps {
   part: ToolPart;
   output: unknown;
   sourceKey: string;
+  isRequestBusy: boolean;
+  hasRenderableHandbook: boolean;
   onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
 }
 
-function ToolCard({ part, output, sourceKey, onOpenEditor }: ToolCardProps) {
+function ToolCard({
+  part,
+  output,
+  sourceKey,
+  isRequestBusy,
+  hasRenderableHandbook,
+  onOpenEditor,
+}: ToolCardProps) {
   const toolName = part.type.replace('tool-', '');
-  const status = getToolStatus(part.state);
+  const baseStatus = getToolStatus(part.state);
+  const shouldForceDoneForGeneratedHandbook =
+    toolName === 'generate_handbook_html'
+    && baseStatus.tone === 'running'
+    && !isRequestBusy
+    && hasRenderableHandbook;
+  const status = shouldForceDoneForGeneratedHandbook
+    ? {
+      label: 'Done',
+      tone: 'done' as const,
+    }
+    : baseStatus;
   const toolJsonPanel = getToolJsonPanel(toolName, part, output);
+  const toolSummary = getToolSummary(toolName, part, output);
   const editable = canEditBlocks(toolName, part, output);
   const ToolIcon = TOOL_ICON_BY_NAME[toolName] ?? LuWrench;
 
@@ -88,9 +110,11 @@ function ToolCard({ part, output, sourceKey, onOpenEditor }: ToolCardProps) {
           {status.label}
         </span>
       </div>
-      <p className="mt-2 text-[11px] leading-[1.45] text-text-tertiary">
-        {getToolSummary(toolName, part, output)}
-      </p>
+      {toolSummary ? (
+        <p className="mt-2 text-[11px] leading-[1.45] text-text-tertiary">
+          {toolSummary}
+        </p>
+      ) : null}
       {toolJsonPanel && (
         <div className="mt-3 rounded-[8px] border border-border-light bg-bg-elevated p-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
@@ -119,6 +143,8 @@ interface MessageContentProps {
   message: UIMessage;
   editedToolOutputs: EditedOutputs;
   handbookStyle: HandbookStyleId | null;
+  isRequestBusy: boolean;
+  hasRenderableHandbook: boolean;
   onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
 }
 
@@ -129,12 +155,52 @@ function toAssistantTitle(style: HandbookStyleId | null): string {
   return `Guide Generate with ${getHandbookStyleLabel(style)} Style`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resolveStyleFromValue(value: unknown): HandbookStyleId | null {
+  if (!isRecord(value)) return null;
+  const styleFromCamel = normalizeHandbookStyle(value.handbookStyle);
+  if (styleFromCamel) return styleFromCamel;
+  return normalizeHandbookStyle(value.handbook_style);
+}
+
+function resolveMessageHandbookStyle(
+  message: UIMessage,
+  editedToolOutputs: EditedOutputs,
+  fallbackStyle: HandbookStyleId | null,
+): HandbookStyleId | null {
+  for (let index = message.parts.length - 1; index >= 0; index -= 1) {
+    const part = message.parts[index];
+    if (!isToolPart(part)) continue;
+    if (part.type !== 'tool-generate_handbook_html') continue;
+
+    const sourceKey = `${message.id}:${index}:${part.type}`;
+    const output = editedToolOutputs[sourceKey] ?? part.output;
+    const styleFromOutput = resolveStyleFromValue(output);
+    if (styleFromOutput) return styleFromOutput;
+
+    const styleFromInput = resolveStyleFromValue(part.input);
+    if (styleFromInput) return styleFromInput;
+  }
+
+  return fallbackStyle;
+}
+
 export function MessageContent({
   message,
   editedToolOutputs,
   handbookStyle,
+  isRequestBusy,
+  hasRenderableHandbook,
   onOpenEditor,
 }: MessageContentProps) {
+  const messageHandbookStyle = resolveMessageHandbookStyle(
+    message,
+    editedToolOutputs,
+    handbookStyle,
+  );
   const assistantMarkdownClassName =
     'text-[14px] leading-[1.55] text-text-secondary [&_a]:text-accent-primary [&_a]:underline [&_code]:rounded-[4px] [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-text-primary [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-3 [&_p:last-child]:mb-0 [&_pre]:overflow-auto [&_pre]:rounded-[8px] [&_pre]:border [&_pre]:border-border-light [&_pre]:bg-bg-secondary [&_pre]:p-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-border-default [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border-default [&_th]:px-2 [&_th]:py-1 [&_ul]:list-disc [&_ul]:pl-5';
 
@@ -144,7 +210,7 @@ export function MessageContent({
         <div className="flex items-center gap-2">
           <LuSparkles className="h-4 w-4 text-accent-primary" />
           <p className="text-[14px] font-semibold text-text-primary">
-            {toAssistantTitle(handbookStyle)}
+            {toAssistantTitle(messageHandbookStyle)}
           </p>
         </div>
       )}
@@ -178,6 +244,8 @@ export function MessageContent({
               part={part}
               output={output}
               sourceKey={sourceKey}
+              isRequestBusy={isRequestBusy}
+              hasRenderableHandbook={hasRenderableHandbook}
               onOpenEditor={onOpenEditor}
             />
           );

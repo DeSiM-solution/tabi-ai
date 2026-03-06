@@ -819,16 +819,16 @@ export default function SessionDetailLayout({
                       <button
                         type="button"
                         onClick={() => dispatchCenterToolbarAction('generate')}
-                        onMouseEnter={event => showToolbarTooltip('Generate Handbook', event)}
+                        onMouseEnter={event => showToolbarTooltip('Remix Handbook', event)}
                         onMouseLeave={hideToolbarTooltip}
-                        onFocus={event => showToolbarTooltip('Generate Handbook', event)}
+                        onFocus={event => showToolbarTooltip('Remix Handbook', event)}
                         onBlur={hideToolbarTooltip}
                         disabled={!hasBlocks || isProcessBusy}
                         className="inline-flex h-10 items-center gap-1.5 rounded-[10px] bg-accent-primary px-3.5 text-[13px] font-medium text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
-                        aria-label="Generate Handbook"
+                        aria-label="Remix Handbook"
                       >
                         <LuSparkles className="h-4 w-4" />
-                        Generate
+                        Remix
                       </button>
                     </>
                   )}
