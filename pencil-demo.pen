@@ -5683,42 +5683,6 @@
                   "children": [
                     {
                       "type": "frame",
-                      "id": "ZiEXt",
-                      "name": "backRow",
-                      "width": "fill_container",
-                      "justifyContent": "end",
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "J7plT",
-                          "name": "backBtn",
-                          "width": 32,
-                          "height": 32,
-                          "fill": "$--bg-secondary",
-                          "cornerRadius": 8,
-                          "stroke": {
-                            "thickness": 1,
-                            "fill": "$--border-light"
-                          },
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "c40kg",
-                              "name": "backIcon",
-                              "fill": "$--text-secondary",
-                              "content": "←",
-                              "fontFamily": "Inter",
-                              "fontSize": 14,
-                              "fontWeight": "600"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "frame",
                       "id": "3XSDy",
                       "name": "titleGroup",
                       "width": "fill_container",
@@ -6091,42 +6055,6 @@
                   "gap": 14,
                   "padding": 24,
                   "children": [
-                    {
-                      "type": "frame",
-                      "id": "E0h7k",
-                      "name": "regBackRow",
-                      "width": "fill_container",
-                      "justifyContent": "end",
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "vnnXc",
-                          "name": "regBackBtn",
-                          "width": 32,
-                          "height": 32,
-                          "fill": "$--bg-secondary",
-                          "cornerRadius": 8,
-                          "stroke": {
-                            "thickness": 1,
-                            "fill": "$--border-light"
-                          },
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "text",
-                              "id": "PGHFN",
-                              "name": "regBackIcon",
-                              "fill": "$--text-secondary",
-                              "content": "←",
-                              "fontFamily": "Inter",
-                              "fontSize": 14,
-                              "fontWeight": "600"
-                            }
-                          ]
-                        }
-                      ]
-                    },
                     {
                       "type": "frame",
                       "id": "z2PpF",

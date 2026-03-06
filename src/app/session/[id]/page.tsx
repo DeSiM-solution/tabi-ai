@@ -552,6 +552,10 @@ export default function Chat() {
   const activeHydrationSessionRef = useRef<string | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
   const imageBackfillAttemptKeyRef = useRef<string | null>(null);
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const autoScrolledSessionRef = useRef<string | null>(null);
+  const pendingAutoScrollSessionRef = useRef<string | null>(null);
+  const chatScrollAnimationFrameRef = useRef<number | null>(null);
   const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -637,6 +641,43 @@ export default function Chat() {
     });
   }, []);
 
+  const stopChatScrollAnimation = useCallback(() => {
+    if (chatScrollAnimationFrameRef.current === null) return;
+    window.cancelAnimationFrame(chatScrollAnimationFrameRef.current);
+    chatScrollAnimationFrameRef.current = null;
+  }, []);
+
+  const scrollChatToBottom = useCallback((durationMs = 720) => {
+    const container = chatScrollContainerRef.current;
+    if (!container) return;
+    const startTop = container.scrollTop;
+    const targetTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (targetTop <= startTop + 1) {
+      container.scrollTop = targetTop;
+      return;
+    }
+
+    stopChatScrollAnimation();
+    const startTime = performance.now();
+    const distance = targetTop - startTop;
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const easedProgress = 1 - (1 - progress) ** 3;
+      container.scrollTop = startTop + distance * easedProgress;
+
+      if (progress < 1) {
+        chatScrollAnimationFrameRef.current = window.requestAnimationFrame(animate);
+        return;
+      }
+
+      chatScrollAnimationFrameRef.current = null;
+    };
+
+    chatScrollAnimationFrameRef.current = window.requestAnimationFrame(animate);
+  }, [stopChatScrollAnimation]);
+
   const requireLogin = useCallback((description: string): boolean => {
     if (!isGuestUser) return true;
     toast.warning('Please login to continue.', {
@@ -711,6 +752,8 @@ export default function Chat() {
     activeHydrationSessionRef.current = null;
     autoOpenedEditableSourceRef.current = new Set();
     persistedHandbookStyleRef.current = '';
+    autoScrolledSessionRef.current = null;
+    pendingAutoScrollSessionRef.current = sessionId;
     setIsSessionHydrating(true);
     setHandbookStyle(null);
     setMessages([]);
@@ -718,6 +761,36 @@ export default function Chat() {
     sessionEditorActions.ensureSession(sessionId);
     handbooksActions.ensureSession(sessionId);
   }, [sessionId, setMessages]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (pendingAutoScrollSessionRef.current !== sessionId) return;
+    if (isSessionHydrating) return;
+    if (messages.length === 0) return;
+    if (autoScrolledSessionRef.current === sessionId) return;
+
+    pendingAutoScrollSessionRef.current = null;
+    autoScrolledSessionRef.current = sessionId;
+    let rafId = 0;
+    let nestedRafId = 0;
+    rafId = window.requestAnimationFrame(() => {
+      nestedRafId = window.requestAnimationFrame(() => {
+        scrollChatToBottom();
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.cancelAnimationFrame(nestedRafId);
+    };
+  }, [isSessionHydrating, messages.length, scrollChatToBottom, sessionId]);
+
+  useEffect(
+    () => () => {
+      stopChatScrollAnimation();
+    },
+    [stopChatScrollAnimation],
+  );
 
   useEffect(() => {
     const styleFromQuery = normalizeHandbookStyle(initialStyle);
@@ -1556,7 +1629,7 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div ref={chatScrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {firstUserTextMessage && (
           <div className="sticky top-0 z-20 mb-4 -mx-1 px-1 pb-1 pt-0">
             <div className="rounded-[12px] bg-accent-primary px-4 py-4 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">

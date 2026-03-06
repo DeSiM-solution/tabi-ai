@@ -75,16 +75,6 @@ function LoginPageContent() {
     <div className="min-h-screen bg-bg-primary text-text-primary">
       <div className="mx-auto flex min-h-screen w-full max-w-[420px] items-center px-6 py-10">
         <section className="w-full rounded-[18px] border border-border-light bg-bg-elevated p-6 shadow-[0_14px_36px_rgba(26,23,20,0.12)]">
-          <div className="mb-4 flex justify-end">
-            <Link
-              href="/"
-              aria-label="Back to home"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-border-light text-[14px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
-            >
-              ←
-            </Link>
-          </div>
-
           <div className="mb-6 text-center">
             <h1 className="text-[26px] font-semibold tracking-[-0.02em] text-text-primary">
               Login
