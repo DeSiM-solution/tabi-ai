@@ -143,7 +143,7 @@ export function SessionSidebar({
                 const handbookSummary =
                   handbookCount > 0
                     ? `${handbookCount} handbook${handbookCount > 1 ? 's' : ''}`
-                    : 'No handbook yet';
+                    : '0 handbook';
                 const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
                   isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
                 }`;

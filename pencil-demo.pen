@@ -5605,6 +5605,900 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "TFSBn",
+      "x": 4319,
+      "y": -574,
+      "name": "Auth Pages - Login Register",
+      "width": 2100,
+      "height": 980,
+      "fill": "$--bg-secondary",
+      "gap": 80,
+      "padding": 40,
+      "children": [
+        {
+          "type": "frame",
+          "id": "56eC2",
+          "name": "Login Page",
+          "width": 940,
+          "height": 900,
+          "fill": "$--bg-primary",
+          "cornerRadius": 24,
+          "stroke": {
+            "thickness": 1,
+            "fill": "$--border-light"
+          },
+          "layout": "vertical",
+          "padding": 48,
+          "children": [
+            {
+              "type": "frame",
+              "id": "VQ8fH",
+              "name": "loginHint",
+              "fill": "$--accent-primary-bg",
+              "cornerRadius": 999,
+              "padding": [
+                8,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "VZHEt",
+                  "name": "loginHintText",
+                  "fill": "$--accent-primary",
+                  "content": "TABI AUTH · LOGIN",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uTkGF",
+              "name": "loginCenter",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "dBxfr",
+                  "name": "loginCard",
+                  "width": 430,
+                  "fill": "$--bg-elevated",
+                  "cornerRadius": 18,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$--border-light"
+                  },
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ZiEXt",
+                      "name": "backRow",
+                      "width": "fill_container",
+                      "justifyContent": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "J7plT",
+                          "name": "backBtn",
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "c40kg",
+                              "name": "backIcon",
+                              "fill": "$--text-secondary",
+                              "content": "←",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "3XSDy",
+                      "name": "titleGroup",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "T8Sll",
+                          "name": "loginTitle",
+                          "fill": "$--text-primary",
+                          "content": "Login",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "RrbVu",
+                          "name": "loginSubtitle",
+                          "fill": "$--text-secondary",
+                          "content": "Continue to your personal Tabi workspace.",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zmvGn",
+                      "name": "loginForm",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 10,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "uRC4v",
+                          "name": "inputIdentifier",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "lURCR",
+                              "name": "inputIdentifierText",
+                              "fill": "$--text-tertiary",
+                              "content": "Username or email",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "leGIS",
+                          "name": "inputPassword",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "KbHpD",
+                              "name": "inputPasswordText",
+                              "fill": "$--text-tertiary",
+                              "content": "Password",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "8TCUZ",
+                          "name": "loginPrimaryButton",
+                          "width": "fill_container",
+                          "height": 42,
+                          "fill": "$--accent-primary",
+                          "cornerRadius": 10,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "ZvIng",
+                              "name": "loginPrimaryButtonText",
+                              "fill": "$--text-inverse",
+                              "content": "Login",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "LXrEA",
+                      "name": "loginDividerRow",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pLMnG",
+                          "name": "dividerLineLeft",
+                          "width": 120,
+                          "height": 1,
+                          "fill": "$--border-light"
+                        },
+                        {
+                          "type": "text",
+                          "id": "oy5o1",
+                          "name": "dividerText",
+                          "fill": "$--text-tertiary",
+                          "content": "OR CONTINUE WITH",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "NSGBm",
+                          "name": "dividerLineRight",
+                          "width": 120,
+                          "height": 1,
+                          "fill": "$--border-light"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jNfX6",
+                      "name": "loginOauthStack",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "R5kup",
+                          "name": "loginGoogleButton",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "gap": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "sC5SA",
+                              "name": "loginGoogleIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "google-logo",
+                              "iconFontFamily": "phosphor",
+                              "fill": "#4285F4"
+                            },
+                            {
+                              "type": "text",
+                              "id": "X8XMZ",
+                              "name": "loginGoogleText",
+                              "fill": "$--text-primary",
+                              "content": "Continue with Google",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "w6OQh",
+                          "name": "loginGithubButton",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "gap": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "0hjc5",
+                              "name": "loginGithubIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "github",
+                              "iconFontFamily": "lucide",
+                              "fill": "$--text-primary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "3giYr",
+                              "name": "loginGithubText",
+                              "fill": "$--text-primary",
+                              "content": "Continue with GitHub",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cCZDI",
+                      "name": "loginErrorBox",
+                      "width": "fill_container",
+                      "height": 36,
+                      "fill": "#F970661A",
+                      "cornerRadius": 10,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#F970664D"
+                      },
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "WWe6g",
+                          "name": "loginErrorText",
+                          "fill": "$--accent-secondary",
+                          "content": "Login failed. Please try again.",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "cqnV7",
+                      "name": "loginFooterRow",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "justifyContent": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "9ye7a",
+                          "name": "loginFooterText",
+                          "fill": "$--text-secondary",
+                          "content": "No account?",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "IkPft",
+                          "name": "loginFooterLink",
+                          "fill": "$--accent-primary",
+                          "content": "Register",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "EUVMl",
+          "name": "Register Page",
+          "width": 940,
+          "height": 900,
+          "fill": "$--bg-primary",
+          "cornerRadius": 24,
+          "stroke": {
+            "thickness": 1,
+            "fill": "$--border-light"
+          },
+          "layout": "vertical",
+          "padding": 48,
+          "children": [
+            {
+              "type": "frame",
+              "id": "3tDoB",
+              "name": "registerHint",
+              "fill": "$--accent-primary-bg",
+              "cornerRadius": 999,
+              "padding": [
+                8,
+                12
+              ],
+              "children": [
+                {
+                  "type": "text",
+                  "id": "TIUqC",
+                  "name": "registerHintText",
+                  "fill": "$--accent-primary",
+                  "content": "TABI AUTH · REGISTER",
+                  "fontFamily": "Inter",
+                  "fontSize": 11,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "BnrXb",
+              "name": "registerCenter",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "9Hob1",
+                  "name": "registerCard",
+                  "width": 430,
+                  "fill": "$--bg-elevated",
+                  "cornerRadius": 18,
+                  "stroke": {
+                    "thickness": 1,
+                    "fill": "$--border-light"
+                  },
+                  "layout": "vertical",
+                  "gap": 14,
+                  "padding": 24,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "E0h7k",
+                      "name": "regBackRow",
+                      "width": "fill_container",
+                      "justifyContent": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "vnnXc",
+                          "name": "regBackBtn",
+                          "width": 32,
+                          "height": 32,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 8,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "PGHFN",
+                              "name": "regBackIcon",
+                              "fill": "$--text-secondary",
+                              "content": "←",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "z2PpF",
+                      "name": "regTitleGroup",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 6,
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "8VgRN",
+                          "name": "registerTitle",
+                          "fill": "$--text-primary",
+                          "content": "Register",
+                          "fontFamily": "Inter",
+                          "fontSize": 28,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "text",
+                          "id": "IMosP",
+                          "name": "registerSubtitle",
+                          "fill": "$--text-secondary",
+                          "content": "Create your account and keep guides under your identity.",
+                          "fontFamily": "Inter",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "nU7rA",
+                      "name": "registerForm",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 10,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "H412S",
+                          "name": "registerInputUsername",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "09FVT",
+                              "name": "registerInputUsernameText",
+                              "fill": "$--text-tertiary",
+                              "content": "Username",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "aovGm",
+                          "name": "registerInputEmail",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "HDMPb",
+                              "name": "registerInputEmailText",
+                              "fill": "$--text-tertiary",
+                              "content": "Email (optional)",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "QMcKa",
+                          "name": "registerInputPassword",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Di27g",
+                              "name": "registerInputPasswordText",
+                              "fill": "$--text-tertiary",
+                              "content": "Password",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "QAgUr",
+                          "name": "registerInputConfirm",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "0AMK3",
+                              "name": "registerInputConfirmText",
+                              "fill": "$--text-tertiary",
+                              "content": "Confirm password",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "4CWmB",
+                          "name": "registerPrimaryButton",
+                          "width": "fill_container",
+                          "height": 42,
+                          "fill": "$--accent-primary",
+                          "cornerRadius": 10,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "s1yiy",
+                              "name": "registerPrimaryButtonText",
+                              "fill": "$--text-inverse",
+                              "content": "Create account",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ZZQ42",
+                      "name": "registerDividerRow",
+                      "width": "fill_container",
+                      "gap": 8,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "3QrMP",
+                          "name": "registerDividerLineLeft",
+                          "width": 120,
+                          "height": 1,
+                          "fill": "$--border-light"
+                        },
+                        {
+                          "type": "text",
+                          "id": "KaWrQ",
+                          "name": "registerDividerText",
+                          "fill": "$--text-tertiary",
+                          "content": "OR CONTINUE WITH",
+                          "fontFamily": "Inter",
+                          "fontSize": 11,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "egvpV",
+                          "name": "registerDividerLineRight",
+                          "width": 120,
+                          "height": 1,
+                          "fill": "$--border-light"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Bv31G",
+                      "name": "registerOauthStack",
+                      "width": "fill_container",
+                      "layout": "vertical",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "k6jmt",
+                          "name": "registerGoogleButton",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "gap": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "R0vz1",
+                              "name": "registerGoogleIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "google-logo",
+                              "iconFontFamily": "phosphor",
+                              "fill": "#4285F4"
+                            },
+                            {
+                              "type": "text",
+                              "id": "Sb5Zp",
+                              "name": "registerGoogleText",
+                              "fill": "$--text-primary",
+                              "content": "Continue with Google",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "7ndti",
+                          "name": "registerGithubButton",
+                          "width": "fill_container",
+                          "height": 40,
+                          "fill": "$--bg-secondary",
+                          "cornerRadius": 10,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "$--border-light"
+                          },
+                          "gap": 8,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon_font",
+                              "id": "kAcYz",
+                              "name": "registerGithubIcon",
+                              "width": 18,
+                              "height": 18,
+                              "iconFontName": "github",
+                              "iconFontFamily": "lucide",
+                              "fill": "$--text-primary"
+                            },
+                            {
+                              "type": "text",
+                              "id": "U7jyo",
+                              "name": "registerGithubText",
+                              "fill": "$--text-primary",
+                              "content": "Continue with GitHub",
+                              "fontFamily": "Inter",
+                              "fontSize": 13,
+                              "fontWeight": "500"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "H83la",
+                      "name": "registerErrorBox",
+                      "width": "fill_container",
+                      "height": 36,
+                      "fill": "#F970661A",
+                      "cornerRadius": 10,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#F970664D"
+                      },
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "7qN4y",
+                          "name": "registerErrorText",
+                          "fill": "$--accent-secondary",
+                          "content": "Passwords do not match.",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kbeHD",
+                      "name": "registerFooterRow",
+                      "width": "fill_container",
+                      "gap": 4,
+                      "justifyContent": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rNWAT",
+                          "name": "registerFooterText",
+                          "fill": "$--text-secondary",
+                          "content": "Already have an account?",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "f1EE9",
+                          "name": "registerFooterLink",
+                          "fill": "$--accent-primary",
+                          "content": "Login",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "variables": {
