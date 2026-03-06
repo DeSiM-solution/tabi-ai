@@ -202,9 +202,6 @@ function resolveHydratedMessages(
   if (cachedMessages.length === 0) return persistedMessages;
   if (persistedMessages.length === 0) return cachedMessages;
 
-  const normalizedStatus = sessionStatus?.toUpperCase() ?? '';
-  if (normalizedStatus !== 'RUNNING') return persistedMessages;
-
   const persistedIsPrefixOfCache = isMessageSequencePrefix(
     persistedMessages,
     cachedMessages,
@@ -215,6 +212,9 @@ function resolveHydratedMessages(
   ) {
     return cachedMessages;
   }
+
+  const normalizedStatus = sessionStatus?.toUpperCase() ?? '';
+  if (normalizedStatus !== 'RUNNING') return persistedMessages;
 
   return persistedMessages;
 }

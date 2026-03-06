@@ -6,7 +6,7 @@ import {
   markSessionError,
   upsertChatMessages,
 } from '@/server/events';
-import { ensureSessionRunning } from '@/server/sessions';
+import { ensureSessionRunning, isSessionOwnershipError } from '@/server/sessions';
 import { createRuntimeState } from '@/agent/context/runtime-state';
 import { hydrateRuntimeState, persistSessionSnapshot } from '@/agent/context/persistence';
 import {
@@ -173,10 +173,17 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   });
 
   if (sessionId) {
-    await ensureSessionRunning({
-      userId,
-      id: sessionId,
-    });
+    try {
+      await ensureSessionRunning({
+        userId,
+        id: sessionId,
+      });
+    } catch (error) {
+      if (isSessionOwnershipError(error)) {
+        return new Response('Session not found for current user.', { status: 404 });
+      }
+      throw error;
+    }
     const syncPersistMaxMessages = Number(process.env.CHAT_SYNC_PERSIST_MAX_MESSAGES ?? 80);
     const shouldPersistAtStart =
       Number.isFinite(syncPersistMaxMessages) &&

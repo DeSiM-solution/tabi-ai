@@ -65,8 +65,31 @@ export async function upsertChatMessages(
   messages: UIMessage[],
 ): Promise<void> {
   await assertOwnedSession(sessionId, userId);
-  const externalIds = messages.map(message => message.id);
-  for (const [seq, message] of messages.entries()) {
+  if (messages.length === 0) {
+    return;
+  }
+
+  const existingMessages = await db.chatMessage.findMany({
+    where: { sessionId },
+    select: {
+      externalId: true,
+      seq: true,
+    },
+  });
+  const existingSeqByExternalId = new Map(
+    existingMessages.map(message => [message.externalId, message.seq]),
+  );
+  let nextSeq = existingMessages.reduce(
+    (maxSeq, message) => Math.max(maxSeq, message.seq),
+    -1,
+  ) + 1;
+
+  for (const message of messages) {
+    const existingSeq = existingSeqByExternalId.get(message.id);
+    const seq = existingSeq ?? nextSeq++;
+    if (!existingSeqByExternalId.has(message.id)) {
+      existingSeqByExternalId.set(message.id, seq);
+    }
     const text = extractText(message.parts);
     await db.chatMessage.upsert({
       where: {
@@ -91,22 +114,6 @@ export async function upsertChatMessages(
       },
     });
   }
-
-  if (externalIds.length === 0) {
-    await db.chatMessage.deleteMany({
-      where: { sessionId },
-    });
-    return;
-  }
-
-  await db.chatMessage.deleteMany({
-    where: {
-      sessionId,
-      externalId: {
-        notIn: externalIds,
-      },
-    },
-  });
 }
 
 export async function createSessionStep(input: {

@@ -137,28 +137,23 @@ export function ensureVideoThumbnailHeader(
   return `${html}\n${headerSection}`;
 }
 
-export function appendOriginVideoLink(html: string, videoUrl: string | null | undefined): string {
-  const normalizedUrl = normalizeOriginVideoUrl(videoUrl);
-  if (!normalizedUrl) return html;
+export function ensureCreatedByTabiFooter(html: string): string {
+  const footerSection =
+    `<footer data-created-by-tabi style="margin:48px auto 16px;max-width:960px;padding:0 24px;text-align:center;color:#94a3b8;font:500 12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">` +
+    `created by Tabi</footer>`;
 
-  const escapedUrl = escapeHtmlAttribute(normalizedUrl);
-  const linkSection =
-    `<section data-origin-video-link style="margin:48px auto 24px;max-width:960px;padding:0 24px;text-align:center;">` +
-    `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;padding:12px 18px;border-radius:9999px;background:#0f766e;color:#ffffff;text-decoration:none;font:600 14px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">` +
-    `Watch Origin Video</a></section>`;
-
-  if (html.includes('data-origin-video-link')) {
+  if (html.includes('data-created-by-tabi')) {
     return html.replace(
-      /<section[^>]*data-origin-video-link[\s\S]*?<\/section>/i,
-      linkSection,
+      /<footer[^>]*data-created-by-tabi[\s\S]*?<\/footer>/i,
+      footerSection,
     );
   }
 
   if (/<\/body>/i.test(html)) {
-    return html.replace(/<\/body>/i, `${linkSection}\n</body>`);
+    return html.replace(/<\/body>/i, `${footerSection}\n</body>`);
   }
 
-  return `${html}\n${linkSection}`;
+  return `${html}\n${footerSection}`;
 }
 
 export function stripMarkdownCodeFence(text: string): string {

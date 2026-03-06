@@ -20,10 +20,12 @@ import {
 } from '@/agent/prompts/handbook-html';
 import { handbookImageAssetSchema, handbookInputSchema } from './types';
 import {
-  appendOriginVideoLink,
+  escapeHtmlAttribute,
+  ensureCreatedByTabiFooter,
   ensureVideoThumbnailHeader,
   getSpotBlocks,
   normalizeHtmlDocument,
+  normalizeOriginVideoUrl,
   normalizeThumbnailUrl,
   stripVideoEmbeds,
 } from './shared';
@@ -193,6 +195,12 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
 
         const resolvedTitle =
           input.title ?? ctx.runtime.latestVideoContext?.title ?? 'Travel Handbook';
+        const originVideoUrl =
+          input.videoUrl ?? ctx.runtime.latestVideoContext?.videoUrl ?? null;
+        const normalizedOriginVideoUrl = normalizeOriginVideoUrl(originVideoUrl);
+        const escapedOriginVideoUrl = normalizedOriginVideoUrl
+          ? escapeHtmlAttribute(normalizedOriginVideoUrl)
+          : null;
 
         console.log('[generate_handbook_html] start', {
           title: input.title ?? null,
@@ -231,9 +239,9 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
               handbookStyle,
               handbookStyleLabel,
               handbookStyleInstruction,
+              escapedUrl: escapedOriginVideoUrl,
             }),
           });
-          const originVideoUrl = input.videoUrl ?? ctx.runtime.latestVideoContext?.videoUrl ?? null;
           html = normalizeHtmlDocument(result.text);
           for (const [placeholderUrl, sourceUrl] of promptImageUrlReplacements) {
             html = html.split(placeholderUrl).join(sourceUrl);
@@ -243,7 +251,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
             thumbnailUrl: resolvedThumbnailUrl,
             title: resolvedTitle,
           });
-          html = appendOriginVideoLink(html, originVideoUrl);
+          html = ensureCreatedByTabiFooter(html);
           modelSummary = `${result.model.provider}:${result.model.modelId} (attempts=${result.attempts})`;
         } catch (error) {
           console.error('[generate_handbook_html] failed', {

@@ -35,6 +35,11 @@ export function handbookHtmlSystemPrompt(options: {
     'Do not reference external JavaScript frameworks.',
     'Do not embed any video player, iframe, or <video> element.',
     'Do not render the source video URL in the main handbook content.',
+    'If escapedUrl is provided in input, render exactly one origin-video CTA button linking to that URL.',
+    'Use escapedUrl exactly as provided for the button href.',
+    'Do not use raw videoUrl for link href values; only use escapedUrl for the origin-video CTA.',
+    'If escapedUrl is null or empty, do not render the origin-video CTA button.',
+    'The origin-video CTA button must visually match the page style; do not force a fixed global button theme.',
     handbookStyleInstruction
       ? `Visual style direction: ${handbookStyleInstruction}`
       : 'Visual style direction: choose a fitting style based on the travel content.',
@@ -53,6 +58,7 @@ export function handbookHtmlPrompt(options: {
   handbookStyle: string;
   handbookStyleLabel: string;
   handbookStyleInstruction: string | null;
+  escapedUrl: string | null;
 }): string {
   const {
     title,
@@ -66,6 +72,7 @@ export function handbookHtmlPrompt(options: {
     handbookStyle,
     handbookStyleLabel,
     handbookStyleInstruction,
+    escapedUrl,
   } = options;
 
   return [
@@ -86,6 +93,7 @@ export function handbookHtmlPrompt(options: {
         handbookStyle,
         handbookStyleLabel,
         handbookStyleInstruction,
+        escapedUrl,
         blocks,
         blocks_with_images: blocksWithImages,
         spot_blocks: spotBlocks,

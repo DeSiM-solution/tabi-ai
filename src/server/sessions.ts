@@ -708,6 +708,14 @@ export async function ensureSessionRunning(input: {
   });
 
   if (updated.count === 0) {
+    const existingSession = await db.session.findUnique({
+      where: { id: input.id },
+      select: { userId: true },
+    });
+    if (existingSession && existingSession.userId !== userId) {
+      throw new SessionOwnershipError();
+    }
+
     try {
       await db.session.create({
         data: {
@@ -737,7 +745,16 @@ export async function ensureSessionRunning(input: {
         });
       } else {
         if (!isUniqueConstraintError(error)) throw error;
-        throw new Error('Session not found for current user.');
+        const ownedSession = await db.session.findFirst({
+          where: {
+            id: input.id,
+            userId,
+          },
+          select: { id: true },
+        });
+        if (!ownedSession) {
+          throw new SessionOwnershipError();
+        }
       }
     }
   }
@@ -1134,6 +1151,7 @@ export async function removeSessionHandbook(
 
 export async function getSessionDetail(
   sessionId: string,
+  userId: string,
 ): Promise<SessionDetailDto | null> {
   let session: {
     id: string;
@@ -1177,6 +1195,7 @@ export async function getSessionDetail(
     session = await db.session.findFirst({
       where: {
         id: sessionId,
+        userId,
       },
       select: {
         id: true,
@@ -1229,6 +1248,7 @@ export async function getSessionDetail(
     session = await db.session.findFirst({
       where: {
         id: sessionId,
+        userId,
       },
       select: {
         id: true,
@@ -1332,6 +1352,17 @@ export async function getSessionStatus(
     select: { status: true },
   });
   return session?.status ?? null;
+}
+
+export class SessionOwnershipError extends Error {
+  constructor() {
+    super('Session not found for current user.');
+    this.name = 'SessionOwnershipError';
+  }
+}
+
+export function isSessionOwnershipError(error: unknown): error is SessionOwnershipError {
+  return error instanceof SessionOwnershipError;
 }
 
 export interface SessionStateSnapshot {
