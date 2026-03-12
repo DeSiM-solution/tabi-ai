@@ -10,9 +10,10 @@ import {
   setActiveHandbook,
   updateSessionHandbook,
 } from '@/server/sessions';
+import { normalizeHandbookImagesToStorage } from '@/server/handbook-image-storage';
 import { persistSessionSnapshot } from '@/agent/context/persistence';
 import type { AgentToolContext } from '@/agent/context/types';
-import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
+import { getDurationMs, isAbortError, isRecord, toErrorMessage } from '@/agent/context/utils';
 import {
   handbookHtmlPrompt,
   handbookHtmlSystemPrompt,
@@ -130,6 +131,27 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           );
         }
 
+        const storageNormalization = await normalizeHandbookImagesToStorage({
+          images: preparedImages,
+          sessionId: ctx.sessionId,
+          handbookId: input.handbookId ?? null,
+          failureMode: 'skip-failed',
+        });
+        preparedImages = handbookImageAssetSchema.array().parse(storageNormalization.images);
+        if (storageNormalization.failures.length > 0) {
+          console.warn('[generate_handbook_html] image-upload-skip-failed', {
+            skippedCount: storageNormalization.skippedCount,
+            uploadedCount: storageNormalization.uploadedCount,
+            reusedCount: storageNormalization.reusedCount,
+            failures: storageNormalization.failures,
+          });
+        }
+        if (preparedImages.length === 0) {
+          throw new Error(
+            'All prepared images failed to upload to storage. No images available for handbook generation.',
+          );
+        }
+
         ctx.runtime.latestHandbookImages = preparedImages;
         if (!ctx.runtime.latestImageMode) {
           ctx.runtime.latestImageMode = preparedImages.some(image => image.source === 'imagen')
@@ -170,7 +192,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           image: promptImageByBlockId.get(block.block_id) ?? null,
         }));
 
-        const handbookStyle =
+        const handbookStyle = 
           normalizeHandbookStyle(input.handbookStyle) ??
           ctx.runtime.latestHandbookStyle ??
           'let-tabi-decide';
@@ -178,9 +200,51 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         const handbookStyleLabel = getHandbookStyleLabel(handbookStyle);
         const handbookStyleInstruction = getHandbookStyleInstruction(handbookStyle);
         const hasThumbnailInput = typeof input.thumbnailUrl === 'string';
-        const resolvedThumbnailUrl = hasThumbnailInput
+        let resolvedThumbnailUrl = hasThumbnailInput
           ? normalizeThumbnailUrl(input.thumbnailUrl)
           : ctx.runtime.latestVideoContext?.thumbnailUrl ?? null;
+        if (resolvedThumbnailUrl) {
+          const thumbnailNormalization = await normalizeHandbookImagesToStorage({
+            images: [
+              {
+                block_id: '__cover__',
+                block_title: 'Cover image',
+                query: 'cover image',
+                alt: 'Cover image',
+                image_url: resolvedThumbnailUrl,
+                source: 'unsplash',
+                source_page: null,
+                credit: null,
+                width: null,
+                height: null,
+              },
+            ],
+            sessionId: ctx.sessionId,
+            handbookId: input.handbookId ?? null,
+            failureMode: 'skip-failed',
+          });
+          resolvedThumbnailUrl =
+            thumbnailNormalization.images[0]?.image_url ?? resolvedThumbnailUrl;
+          if (thumbnailNormalization.failures.length > 0) {
+            console.warn('[generate_handbook_html] cover-image-upload-skip-failed', {
+              failures: thumbnailNormalization.failures,
+            });
+          }
+        }
+
+        for (const toolName of ['build_travel_blocks', 'resolve_spot_coordinates'] as const) {
+          const toolOutput = ctx.runtime.latestToolOutputs[toolName];
+          if (!isRecord(toolOutput)) continue;
+          if ('thumbnailUrl' in toolOutput) {
+            toolOutput.thumbnailUrl = resolvedThumbnailUrl;
+          }
+          if ('coverImageUrl' in toolOutput) {
+            toolOutput.coverImageUrl = resolvedThumbnailUrl;
+          }
+          if ('cover_image_url' in toolOutput) {
+            toolOutput.cover_image_url = resolvedThumbnailUrl;
+          }
+        }
 
         if (input.videoId || input.videoUrl || input.title || hasThumbnailInput) {
           ctx.runtime.latestVideoContext = {

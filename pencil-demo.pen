@@ -3667,530 +3667,6 @@
     },
     {
       "type": "frame",
-      "id": "TolDZ",
-      "x": 2759,
-      "y": -371,
-      "name": "Style Confirm Modal - Toolbar",
-      "width": 1440,
-      "height": 900,
-      "fill": "#2D2A2666",
-      "layout": "vertical",
-      "padding": [
-        64,
-        40
-      ],
-      "justifyContent": "center",
-      "alignItems": "center",
-      "children": [
-        {
-          "type": "frame",
-          "id": "CpAnc",
-          "name": "styleConfirmDialog",
-          "width": 560,
-          "fill": "$--bg-elevated",
-          "cornerRadius": 24,
-          "stroke": {
-            "thickness": 1,
-            "fill": "$--border-light"
-          },
-          "effect": {
-            "type": "shadow",
-            "shadowType": "outer",
-            "color": "#0000001F",
-            "offset": {
-              "x": 0,
-              "y": 12
-            },
-            "blur": 28
-          },
-          "layout": "vertical",
-          "gap": 24,
-          "padding": 32,
-          "children": [
-            {
-              "type": "frame",
-              "id": "sF3uO",
-              "name": "headerC",
-              "width": "fill_container",
-              "layout": "vertical",
-              "gap": 8,
-              "children": [
-                {
-                  "type": "text",
-                  "id": "7E31o",
-                  "name": "titleC",
-                  "fill": "$--text-primary",
-                  "content": "Choose your guide's aesthetic",
-                  "fontFamily": "Inter",
-                  "fontSize": 30,
-                  "fontWeight": "700",
-                  "letterSpacing": -0.6
-                },
-                {
-                  "type": "text",
-                  "id": "7wQGt",
-                  "name": "subtitleC",
-                  "fill": "$--text-secondary",
-                  "content": "Before generating from toolbar, reconfirm the Authentic preset for this run.",
-                  "lineHeight": 1.6,
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "normal"
-                }
-              ]
-            },
-            {
-              "type": "text",
-              "id": "BHJgy",
-              "name": "presetLabelC",
-              "fill": "$--text-primary",
-              "content": "Aesthetic presets",
-              "fontFamily": "Inter",
-              "fontSize": 15,
-              "fontWeight": "600"
-            },
-            {
-              "type": "frame",
-              "id": "w73Gs",
-              "name": "presetRowC",
-              "width": "fill_container",
-              "gap": 24,
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "y3wZW",
-                  "name": "opt1C",
-                  "width": 88,
-                  "layout": "vertical",
-                  "gap": 8,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "rey4o",
-                      "name": "minimalBox",
-                      "width": 68,
-                      "height": 68,
-                      "fill": "#FFFFFF",
-                      "cornerRadius": 24,
-                      "stroke": {
-                        "thickness": 2,
-                        "fill": "#E4E4E7"
-                      },
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "frame",
-                          "id": "1jrRN",
-                          "name": "opt1BadgeC",
-                          "width": 20,
-                          "height": 20,
-                          "fill": "$--accent-primary",
-                          "cornerRadius": 10,
-                          "justifyContent": "center",
-                          "alignItems": "center",
-                          "children": [
-                            {
-                              "type": "icon_font",
-                              "id": "CH6mw",
-                              "name": "opt1BadgeIconC",
-                              "width": 12,
-                              "height": 12,
-                              "iconFontName": "check",
-                              "iconFontFamily": "lucide",
-                              "fill": "$--text-inverse"
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "PsXFL",
-                      "name": "opt1TextC",
-                      "fill": "$--text-primary",
-                      "content": "Minimal\nTokyo",
-                      "lineHeight": 1.25,
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "kZBAd",
-                  "name": "opt2C",
-                  "width": 88,
-                  "layout": "vertical",
-                  "gap": 8,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "Kbhh2",
-                      "name": "warmBox",
-                      "width": 68,
-                      "height": 68,
-                      "fill": {
-                        "type": "gradient",
-                        "gradientType": "linear",
-                        "enabled": true,
-                        "rotation": 145,
-                        "size": {
-                          "height": 1
-                        },
-                        "colors": [
-                          {
-                            "color": "#FEF7E6",
-                            "position": 0
-                          },
-                          {
-                            "color": "#F5E6C8",
-                            "position": 0.4
-                          },
-                          {
-                            "color": "#E8D4A8",
-                            "position": 1
-                          }
-                        ]
-                      },
-                      "cornerRadius": 24,
-                      "stroke": {
-                        "thickness": 2,
-                        "fill": "#E4E4E7"
-                      }
-                    },
-                    {
-                      "type": "text",
-                      "id": "xvcOV",
-                      "name": "opt2TextC",
-                      "fill": "$--text-secondary",
-                      "content": "Warm\nAnalog",
-                      "lineHeight": 1.25,
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "ezCnE",
-                  "name": "cpV3",
-                  "width": 80,
-                  "layout": "vertical",
-                  "gap": 8,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "ZTIpe",
-                      "name": "cpV3Box",
-                      "width": 68,
-                      "height": 68,
-                      "fill": "#18181B",
-                      "cornerRadius": 24,
-                      "stroke": {
-                        "thickness": 2,
-                        "fill": "#E4E4E7"
-                      },
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "rectangle",
-                          "cornerRadius": 6,
-                          "id": "b2XtD",
-                          "name": "cpV3Icon",
-                          "fill": "#F43F5E",
-                          "width": 28,
-                          "height": 28
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "fxFEm",
-                      "name": "cpV3Name",
-                      "fill": "$--text-secondary",
-                      "content": "Brutalist",
-                      "lineHeight": 1.25,
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "aQqq7",
-                  "name": "cpV4",
-                  "width": 80,
-                  "layout": "vertical",
-                  "gap": 8,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "WdOtm",
-                      "name": "cpV4Box",
-                      "width": 68,
-                      "height": 68,
-                      "fill": {
-                        "type": "gradient",
-                        "gradientType": "linear",
-                        "enabled": true,
-                        "rotation": 145,
-                        "size": {
-                          "height": 1
-                        },
-                        "colors": [
-                          {
-                            "color": "#FDF4FF",
-                            "position": 0
-                          },
-                          {
-                            "color": "#F3E8FF",
-                            "position": 0.4
-                          },
-                          {
-                            "color": "#E9D5FF",
-                            "position": 1
-                          }
-                        ]
-                      },
-                      "cornerRadius": 24,
-                      "stroke": {
-                        "thickness": 2,
-                        "fill": "#E4E4E7"
-                      }
-                    },
-                    {
-                      "type": "text",
-                      "id": "xmXk4",
-                      "name": "cpV4Name",
-                      "fill": "$--text-secondary",
-                      "content": "Dreamy\nSoft",
-                      "lineHeight": 1.25,
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "1lyv1",
-                  "name": "cpV5",
-                  "width": 80,
-                  "layout": "vertical",
-                  "gap": 8,
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "frame",
-                      "id": "3mgCp",
-                      "name": "cpV5Box",
-                      "width": 68,
-                      "height": 68,
-                      "fill": {
-                        "type": "gradient",
-                        "gradientType": "linear",
-                        "enabled": true,
-                        "rotation": 145,
-                        "size": {
-                          "height": 1
-                        },
-                        "colors": [
-                          {
-                            "color": "#F5F3EF",
-                            "position": 0
-                          },
-                          {
-                            "color": "#FAFAF8",
-                            "position": 0.45
-                          },
-                          {
-                            "color": "#E8E6E3",
-                            "position": 1
-                          }
-                        ]
-                      },
-                      "cornerRadius": 24,
-                      "stroke": {
-                        "thickness": 2,
-                        "fill": "#E4E4E7"
-                      },
-                      "justifyContent": "center",
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "DA5DO",
-                          "name": "cpV5Logo",
-                          "fill": "#71717A",
-                          "content": "旅",
-                          "fontFamily": "Noto Sans JP",
-                          "fontSize": 20,
-                          "fontWeight": "600"
-                        }
-                      ]
-                    },
-                    {
-                      "type": "text",
-                      "id": "2vgrW",
-                      "name": "cpV5Name",
-                      "fill": "$--text-secondary",
-                      "content": "Let Tabi\ndecide",
-                      "lineHeight": 1.25,
-                      "textAlign": "center",
-                      "fontFamily": "Inter",
-                      "fontSize": 13,
-                      "fontWeight": "500"
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "7T4F7",
-              "name": "defaultRowC",
-              "width": "fill_container",
-              "gap": 10,
-              "alignItems": "center",
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "4Lz5J",
-                  "name": "defaultBoxC",
-                  "width": 18,
-                  "height": 18,
-                  "fill": "$--accent-primary",
-                  "cornerRadius": 5,
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "icon_font",
-                      "id": "9dsGG",
-                      "name": "defaultIconC",
-                      "width": 12,
-                      "height": 12,
-                      "iconFontName": "check",
-                      "iconFontFamily": "lucide",
-                      "fill": "$--text-inverse"
-                    }
-                  ]
-                },
-                {
-                  "type": "text",
-                  "id": "ne42B",
-                  "name": "defaultTextC",
-                  "fill": "$--text-secondary",
-                  "content": "Set as session default",
-                  "fontFamily": "Inter",
-                  "fontSize": 13,
-                  "fontWeight": "500"
-                }
-              ]
-            },
-            {
-              "type": "frame",
-              "id": "AUbNi",
-              "name": "footerRowC",
-              "width": "fill_container",
-              "gap": 12,
-              "justifyContent": "end",
-              "children": [
-                {
-                  "type": "frame",
-                  "id": "rpiC6",
-                  "name": "cancelBtnC",
-                  "height": 44,
-                  "fill": "$--bg-secondary",
-                  "cornerRadius": 12,
-                  "stroke": {
-                    "thickness": 1,
-                    "fill": "$--border-light"
-                  },
-                  "padding": [
-                    0,
-                    18
-                  ],
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "6Aufw",
-                      "name": "cancelTextC",
-                      "fill": "$--text-secondary",
-                      "content": "Cancel",
-                      "fontFamily": "Inter",
-                      "fontSize": 14,
-                      "fontWeight": "600"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "Eu6iE",
-                  "name": "generateBtnC",
-                  "height": 44,
-                  "fill": {
-                    "type": "gradient",
-                    "gradientType": "linear",
-                    "enabled": true,
-                    "rotation": 135,
-                    "size": {
-                      "height": 1
-                    },
-                    "colors": [
-                      {
-                        "color": "#F97066",
-                        "position": 0
-                      },
-                      {
-                        "color": "#FB923C",
-                        "position": 1
-                      }
-                    ]
-                  },
-                  "cornerRadius": 14,
-                  "padding": [
-                    0,
-                    20
-                  ],
-                  "justifyContent": "center",
-                  "alignItems": "center",
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "lTQF8",
-                      "name": "generateTextC",
-                      "fill": "$--text-inverse",
-                      "content": "Generate with Minimal Tokyo",
-                      "fontFamily": "Inter",
-                      "fontSize": 14,
-                      "fontWeight": "600"
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "frame",
       "id": "D6gOb",
       "x": 334,
       "y": 683,
@@ -5266,8 +4742,8 @@
     {
       "type": "frame",
       "id": "TFSBn",
-      "x": 4319,
-      "y": -574,
+      "x": 3543,
+      "y": -371,
       "name": "Auth Pages - Login Register",
       "width": 2100,
       "height": 980,
@@ -16124,6 +15600,1438 @@
             "thickness": 1
           },
           "layout": "none"
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "Z44cm",
+      "x": 3792,
+      "y": 913,
+      "name": "CSV Export Guide (Modal)",
+      "width": 520,
+      "height": 605,
+      "fill": "#FFFFFFFF",
+      "cornerRadius": 12,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000020",
+        "offset": {
+          "x": 0,
+          "y": 8
+        },
+        "blur": 24
+      },
+      "layout": "vertical",
+      "gap": 16,
+      "padding": 24,
+      "children": [
+        {
+          "type": "frame",
+          "id": "P0DiI",
+          "name": "Header",
+          "width": "fill_container",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "mDoj1",
+              "name": "Title",
+              "fill": "#2D2A26FF",
+              "content": "Import to Google My Maps",
+              "fontFamily": "Inter",
+              "fontSize": 16,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "kxekJ",
+              "name": "Close",
+              "width": 28,
+              "height": 28,
+              "cornerRadius": 6,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "bCJbL",
+                  "name": "x",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "x",
+                  "iconFontFamily": "lucide",
+                  "fill": "#9C968FFF"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "oMTui",
+          "name": "Subtitle",
+          "fill": "#6B6560FF",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "CSV downloaded. Follow the steps below to import it into Google My Maps.",
+          "lineHeight": 1.5,
+          "fontFamily": "Inter",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "OrGlt",
+          "name": "Export summary",
+          "width": "fill_container",
+          "fill": "#F5F3EFFF",
+          "cornerRadius": 10,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#E8E6E3FF"
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "qfy0s",
+              "name": "Summary label",
+              "fill": "#9C968FFF",
+              "content": "Export summary",
+              "lineHeight": 1.4,
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "MhMBb",
+              "name": "Summary value",
+              "fill": "#2D2A26FF",
+              "content": "Exported: 6 places • Missing coords: 2",
+              "lineHeight": 1.5,
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "mHf3O",
+          "name": "Steps",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 10,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Rzde1",
+              "name": "Step 1",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "5gHzR",
+                  "name": "Badge",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#F0FDFAFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#8BD9CFFF"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "nozrz",
+                      "name": "1",
+                      "fill": "#0D9488FF",
+                      "content": "1",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "PWAvi",
+                  "name": "Copy",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ftlc6",
+                      "name": "Step title",
+                      "fill": "#2D2A26FF",
+                      "content": "Open Google My Maps",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "JivD6",
+                      "name": "Step desc",
+                      "fill": "#6B6560FF",
+                      "content": "Click “Create a new map”.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "U3neu",
+              "name": "Step 2",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "XMo6M",
+                  "name": "Badge",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#F0FDFAFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#8BD9CFFF"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "2jSuO",
+                      "name": "2",
+                      "fill": "#0D9488FF",
+                      "content": "2",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RKQi3",
+                  "name": "Copy",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Kp9co",
+                      "name": "Step title",
+                      "fill": "#2D2A26FF",
+                      "content": "Import the CSV",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "QUmmL",
+                      "name": "Step desc",
+                      "fill": "#6B6560FF",
+                      "content": "In the left panel, click “Import” and choose the CSV file you just downloaded.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "UKEUs",
+              "name": "Step 3",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "B54er",
+                  "name": "Badge",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#F0FDFAFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#8BD9CFFF"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "PzeDX",
+                      "name": "3",
+                      "fill": "#0D9488FF",
+                      "content": "3",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "E3FoM",
+                  "name": "Copy",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Yrxsx",
+                      "name": "Step title",
+                      "fill": "#2D2A26FF",
+                      "content": "Pick location columns",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "flCu3",
+                      "name": "Step desc",
+                      "fill": "#6B6560FF",
+                      "content": "When asked for location info, select: longitude + latitude.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "06vb6",
+              "name": "Step 4",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "UhvgC",
+                  "name": "Badge",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#F0FDFAFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#8BD9CFFF"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "BuBZR",
+                      "name": "4",
+                      "fill": "#0D9488FF",
+                      "content": "4",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "WFlFk",
+                  "name": "Copy",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "bfOkC",
+                      "name": "Step title",
+                      "fill": "#2D2A26FF",
+                      "content": "Pick a title column",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "oFvEY",
+                      "name": "Step desc",
+                      "fill": "#6B6560FF",
+                      "content": "For marker titles, select: name.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "CI6gZ",
+              "name": "Step 5",
+              "width": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "9Bbve",
+                  "name": "Badge",
+                  "width": 24,
+                  "height": 24,
+                  "fill": "#F0FDFAFF",
+                  "cornerRadius": 999,
+                  "stroke": {
+                    "align": "inside",
+                    "thickness": 1,
+                    "fill": "#8BD9CFFF"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "U7lco",
+                      "name": "5",
+                      "fill": "#0D9488FF",
+                      "content": "5",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "700"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "qvqFc",
+                  "name": "Copy",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JP6SA",
+                      "name": "Step title",
+                      "fill": "#2D2A26FF",
+                      "content": "Share your map",
+                      "lineHeight": 1.4,
+                      "fontFamily": "Inter",
+                      "fontSize": 13,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "RXrHF",
+                      "name": "Step desc",
+                      "fill": "#6B6560FF",
+                      "content": "Rename the layer, change colors, and click Share to get a link.",
+                      "lineHeight": 1.5,
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "Ny1R9",
+          "name": "Troubleshooting",
+          "width": "fill_container",
+          "fill": "#FAFAF8FF",
+          "cornerRadius": 10,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#E8E6E3FF"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "children": [
+            {
+              "type": "frame",
+              "id": "z1xcT",
+              "name": "Trouble header",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "V0FFN",
+                  "name": "Trouble title",
+                  "fill": "#2D2A26FF",
+                  "content": "Troubleshooting",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "icon_font",
+                  "id": "4rjTp",
+                  "name": "chevron",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "chevron-down",
+                  "iconFontFamily": "lucide",
+                  "fill": "#9C968FFF"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "urcYR",
+              "name": "Trouble copy",
+              "fill": "#6B6560FF",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "• Points are in the ocean → latitude/longitude may be swapped.\n• Nothing shows → make sure you selected longitude + latitude for location.",
+              "lineHeight": 1.5,
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "AZOmc",
+          "name": "Primary CTA",
+          "width": "fill_container",
+          "fill": "#0D9488FF",
+          "cornerRadius": 10,
+          "gap": 8,
+          "padding": [
+            10,
+            16
+          ],
+          "justifyContent": "center",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "icon_font",
+              "id": "G6vId",
+              "name": "external",
+              "width": 14,
+              "height": 14,
+              "iconFontName": "external-link",
+              "iconFontFamily": "lucide",
+              "fill": "#FAFAF8FF"
+            },
+            {
+              "type": "text",
+              "id": "P7Y1g",
+              "name": "CTA Label",
+              "fill": "#FAFAF8FF",
+              "content": "Open Google My Maps",
+              "fontFamily": "Inter",
+              "fontSize": 13,
+              "fontWeight": "600"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "CpAnc",
+      "x": 2794,
+      "y": -334,
+      "name": "Style Confirm Dialog",
+      "width": 560,
+      "fill": "$--bg-elevated",
+      "cornerRadius": 24,
+      "stroke": {
+        "thickness": 1,
+        "fill": "$--border-light"
+      },
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#0000001F",
+        "offset": {
+          "x": 0,
+          "y": 12
+        },
+        "blur": 28
+      },
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 32,
+      "children": [
+        {
+          "type": "frame",
+          "id": "sF3uO",
+          "name": "headerC",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 8,
+          "children": [
+            {
+              "type": "text",
+              "id": "7E31o",
+              "name": "titleC",
+              "fill": "$--text-primary",
+              "content": "Choose your guide's aesthetic",
+              "fontFamily": "Inter",
+              "fontSize": 30,
+              "fontWeight": "700",
+              "letterSpacing": -0.6
+            },
+            {
+              "type": "text",
+              "id": "7wQGt",
+              "name": "subtitleC",
+              "fill": "$--text-secondary",
+              "content": "Before generating from toolbar, reconfirm the Authentic preset for this run.",
+              "lineHeight": 1.6,
+              "fontFamily": "Inter",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "BHJgy",
+          "name": "presetLabelC",
+          "fill": "$--text-primary",
+          "content": "Aesthetic presets",
+          "fontFamily": "Inter",
+          "fontSize": 15,
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "w73Gs",
+          "name": "presetRowC",
+          "width": "fill_container",
+          "gap": 24,
+          "children": [
+            {
+              "type": "frame",
+              "id": "y3wZW",
+              "name": "opt1C",
+              "width": 88,
+              "layout": "vertical",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "rey4o",
+                  "name": "minimalBox",
+                  "width": 68,
+                  "height": 68,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 24,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#E4E4E7"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "1jrRN",
+                      "name": "opt1BadgeC",
+                      "width": 20,
+                      "height": 20,
+                      "fill": "$--accent-primary",
+                      "cornerRadius": 10,
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon_font",
+                          "id": "CH6mw",
+                          "name": "opt1BadgeIconC",
+                          "width": 12,
+                          "height": 12,
+                          "iconFontName": "check",
+                          "iconFontFamily": "lucide",
+                          "fill": "$--text-inverse"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "PsXFL",
+                  "name": "opt1TextC",
+                  "fill": "$--text-primary",
+                  "content": "Minimal\nTokyo",
+                  "lineHeight": 1.25,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "kZBAd",
+              "name": "opt2C",
+              "width": 88,
+              "layout": "vertical",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "Kbhh2",
+                  "name": "warmBox",
+                  "width": 68,
+                  "height": 68,
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 145,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#FEF7E6",
+                        "position": 0
+                      },
+                      {
+                        "color": "#F5E6C8",
+                        "position": 0.4
+                      },
+                      {
+                        "color": "#E8D4A8",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 24,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#E4E4E7"
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "xvcOV",
+                  "name": "opt2TextC",
+                  "fill": "$--text-secondary",
+                  "content": "Warm\nAnalog",
+                  "lineHeight": 1.25,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ezCnE",
+              "name": "cpV3",
+              "width": 80,
+              "layout": "vertical",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ZTIpe",
+                  "name": "cpV3Box",
+                  "width": 68,
+                  "height": 68,
+                  "fill": "#18181B",
+                  "cornerRadius": 24,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#E4E4E7"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "cornerRadius": 6,
+                      "id": "b2XtD",
+                      "name": "cpV3Icon",
+                      "fill": "#F43F5E",
+                      "width": 28,
+                      "height": 28
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "fxFEm",
+                  "name": "cpV3Name",
+                  "fill": "$--text-secondary",
+                  "content": "Brutalist",
+                  "lineHeight": 1.25,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "aQqq7",
+              "name": "cpV4",
+              "width": 80,
+              "layout": "vertical",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "WdOtm",
+                  "name": "cpV4Box",
+                  "width": 68,
+                  "height": 68,
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 145,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#FDF4FF",
+                        "position": 0
+                      },
+                      {
+                        "color": "#F3E8FF",
+                        "position": 0.4
+                      },
+                      {
+                        "color": "#E9D5FF",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 24,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#E4E4E7"
+                  }
+                },
+                {
+                  "type": "text",
+                  "id": "xmXk4",
+                  "name": "cpV4Name",
+                  "fill": "$--text-secondary",
+                  "content": "Dreamy\nSoft",
+                  "lineHeight": 1.25,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "1lyv1",
+              "name": "cpV5",
+              "width": 80,
+              "layout": "vertical",
+              "gap": 8,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "3mgCp",
+                  "name": "cpV5Box",
+                  "width": 68,
+                  "height": 68,
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 145,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#F5F3EF",
+                        "position": 0
+                      },
+                      {
+                        "color": "#FAFAF8",
+                        "position": 0.45
+                      },
+                      {
+                        "color": "#E8E6E3",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 24,
+                  "stroke": {
+                    "thickness": 2,
+                    "fill": "#E4E4E7"
+                  },
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "DA5DO",
+                      "name": "cpV5Logo",
+                      "fill": "#71717A",
+                      "content": "旅",
+                      "fontFamily": "Noto Sans JP",
+                      "fontSize": 20,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "2vgrW",
+                  "name": "cpV5Name",
+                  "fill": "$--text-secondary",
+                  "content": "Let Tabi\ndecide",
+                  "lineHeight": 1.25,
+                  "textAlign": "center",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "500"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "7T4F7",
+          "name": "defaultRowC",
+          "width": "fill_container",
+          "gap": 10,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "4Lz5J",
+              "name": "defaultBoxC",
+              "width": 18,
+              "height": 18,
+              "fill": "$--accent-primary",
+              "cornerRadius": 5,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "9dsGG",
+                  "name": "defaultIconC",
+                  "width": 12,
+                  "height": 12,
+                  "iconFontName": "check",
+                  "iconFontFamily": "lucide",
+                  "fill": "$--text-inverse"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "ne42B",
+              "name": "defaultTextC",
+              "fill": "$--text-secondary",
+              "content": "Set as session default",
+              "fontFamily": "Inter",
+              "fontSize": 13,
+              "fontWeight": "500"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "AUbNi",
+          "name": "footerRowC",
+          "width": "fill_container",
+          "gap": 12,
+          "justifyContent": "end",
+          "children": [
+            {
+              "type": "frame",
+              "id": "rpiC6",
+              "name": "cancelBtnC",
+              "height": 44,
+              "fill": "$--bg-secondary",
+              "cornerRadius": 12,
+              "stroke": {
+                "thickness": 1,
+                "fill": "$--border-light"
+              },
+              "padding": [
+                0,
+                18
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "6Aufw",
+                  "name": "cancelTextC",
+                  "fill": "$--text-secondary",
+                  "content": "Cancel",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Eu6iE",
+              "name": "generateBtnC",
+              "height": 44,
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": 135,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#F97066",
+                    "position": 0
+                  },
+                  {
+                    "color": "#FB923C",
+                    "position": 1
+                  }
+                ]
+              },
+              "cornerRadius": 14,
+              "padding": [
+                0,
+                20
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "lTQF8",
+                  "name": "generateTextC",
+                  "fill": "$--text-inverse",
+                  "content": "Generate with Minimal Tokyo",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "eiHVK",
+      "x": 4593,
+      "y": 1030,
+      "name": "Open Maps + Copy Summary (Modal)",
+      "width": 560,
+      "fill": "#FFFFFFFF",
+      "cornerRadius": 12,
+      "effect": {
+        "type": "shadow",
+        "shadowType": "outer",
+        "color": "#00000020",
+        "offset": {
+          "x": 0,
+          "y": 8
+        },
+        "blur": 24
+      },
+      "layout": "vertical",
+      "gap": 16,
+      "padding": 24,
+      "children": [
+        {
+          "type": "frame",
+          "id": "DMjp1",
+          "name": "Header",
+          "width": "fill_container",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "XFSSw",
+              "name": "Title",
+              "fill": "#2D2A26FF",
+              "content": "Open Maps or Download CSV",
+              "fontFamily": "Inter",
+              "fontSize": 16,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "rMjUd",
+              "name": "Close",
+              "width": 28,
+              "height": 28,
+              "cornerRadius": 6,
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "9Kv22",
+                  "name": "x",
+                  "width": 16,
+                  "height": 16,
+                  "iconFontName": "x",
+                  "iconFontFamily": "lucide",
+                  "fill": "#9C968FFF"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "5BYKF",
+          "name": "Subtitle",
+          "fill": "#6B6560FF",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "You have two options: Open Maps directly via URL, or download CSV and import it in My Maps.",
+          "lineHeight": 1.5,
+          "fontFamily": "Inter",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "qjxOV",
+          "name": "Action Row",
+          "width": "fill_container",
+          "gap": 10,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Mwdta",
+              "name": "Primary CTA",
+              "width": "fill_container",
+              "fill": "#0D9488FF",
+              "cornerRadius": 10,
+              "gap": 8,
+              "padding": [
+                10,
+                16
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "6ln8Q",
+                  "name": "external",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "external-link",
+                  "iconFontFamily": "lucide",
+                  "fill": "#FAFAF8FF"
+                },
+                {
+                  "type": "text",
+                  "id": "IA4Ey",
+                  "name": "CTA Label",
+                  "fill": "#FAFAF8FF",
+                  "content": "Open Maps",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Xp2l0",
+              "name": "Secondary CTA",
+              "width": "fill_container",
+              "fill": "#F5F3EFFF",
+              "cornerRadius": 10,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E8E6E3FF"
+              },
+              "gap": 8,
+              "padding": [
+                10,
+                16
+              ],
+              "justifyContent": "center",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon_font",
+                  "id": "GBg9m",
+                  "name": "copy",
+                  "width": 14,
+                  "height": 14,
+                  "iconFontName": "download",
+                  "iconFontFamily": "lucide",
+                  "fill": "#2D2A26FF"
+                },
+                {
+                  "type": "text",
+                  "id": "zIRcn",
+                  "name": "Copy Label",
+                  "fill": "#2D2A26FF",
+                  "content": "Download CSV",
+                  "fontFamily": "Inter",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "lc2oX",
+          "name": "Copy Payload",
+          "width": "fill_container",
+          "fill": "#FAFAF8FF",
+          "cornerRadius": 10,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#E8E6E3FF"
+          },
+          "layout": "vertical",
+          "gap": 8,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "4bmkW",
+              "name": "Copy label",
+              "fill": "#2D2A26FF",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "Download CSV include all fields data.",
+              "lineHeight": 1.4,
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "WRkTp",
+              "name": "Field list inline",
+              "fill": "#6B6560FF",
+              "content": "id | name | tags | description | longitude | latitude",
+              "lineHeight": 1.4,
+              "fontFamily": "Inter",
+              "fontSize": 11,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "vpGME",
+              "name": "CSV Preview (Collapsed)",
+              "width": "fill_container",
+              "fill": "#FFFFFFFF",
+              "cornerRadius": 8,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#E8E6E3FF"
+              },
+              "padding": [
+                10,
+                12
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "fD8it",
+                  "name": "Collapsed left",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "IcZ2z",
+                      "name": "Chevron",
+                      "width": 14,
+                      "height": 14,
+                      "iconFontName": "chevron-down",
+                      "iconFontFamily": "lucide",
+                      "fill": "#6B6560FF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "TRX9s",
+                      "name": "Collapsed label",
+                      "fill": "#6B6560FF",
+                      "content": "CSV preview ",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "RUaZb",
+              "name": "Post-copy map link",
+              "width": "fill_container",
+              "fill": "#E7F8F4FF",
+              "cornerRadius": 8,
+              "stroke": {
+                "align": "inside",
+                "thickness": 1,
+                "fill": "#8BD9CFFF"
+              },
+              "padding": [
+                10,
+                12
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "i3ccM",
+                  "name": "Link left",
+                  "gap": 6,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon_font",
+                      "id": "t8zPk",
+                      "name": "external-link",
+                      "width": 14,
+                      "height": 14,
+                      "iconFontName": "external-link",
+                      "iconFontFamily": "lucide",
+                      "fill": "#0F766EFF"
+                    },
+                    {
+                      "type": "text",
+                      "id": "DYsv5",
+                      "name": "Link text",
+                      "fill": "#0F766EFF",
+                      "content": "Open My Maps to import downloaded CSV",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "QbYpT",
+          "name": "Edge cases",
+          "width": "fill_container",
+          "fill": "#FFF7EDFF",
+          "cornerRadius": 10,
+          "stroke": {
+            "align": "inside",
+            "thickness": 1,
+            "fill": "#FED7AAFF"
+          },
+          "layout": "vertical",
+          "gap": 6,
+          "padding": 12,
+          "children": [
+            {
+              "type": "text",
+              "id": "kczcI",
+              "name": "Edge title",
+              "fill": "#9A3412FF",
+              "content": "Fallback behavior",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "anw6I",
+              "name": "Edge copy",
+              "fill": "#9A3412FF",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "content": "If the Open Maps link doesn’t work, click Download CSV and import the file in Google My Maps.",
+              "lineHeight": 1.5,
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
         }
       ]
     }

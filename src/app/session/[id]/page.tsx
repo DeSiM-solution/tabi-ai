@@ -1,37 +1,59 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, type UIMessage } from 'ai';
+import { DefaultChatTransport } from 'ai';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
+import { ChatHeader } from './_components/chat-header';
+import { ChatInput } from './_components/chat-input';
+import { ChatMessages } from './_components/chat-messages';
+import { SessionBlocksPanel } from './_components/session-blocks-panel';
+import { SessionHtmlPanel } from './_components/session-html-panel';
+import { SessionLoadingOverlay } from './_components/session-loading-overlay';
+import { SessionStyleConfirmModal } from './_components/session-style-confirm-modal';
 import {
-  LuArrowRight,
-  LuChevronDown,
-  LuCheck,
-  LuRefreshCw,
-  LuSendHorizontal,
-  LuTrash2,
-} from 'react-icons/lu';
-import { BlockEditorWorkspace } from './_components/block-editor-workspace';
-import { MessageContent } from './_components/message-content';
+  generateHandbookFromEditor as generateHandbookFromEditorAction,
+  type PendingGeneratingHandbookVersion,
+} from './_actions/handbook-actions';
+import {
+  exportEditorSessionCsv,
+  persistEditorOutput as persistEditorOutputAction,
+  saveEditorSession,
+  type CsvExportGuideState,
+} from './_actions/editor-actions';
+import {
+  activateHandbookVersion as activateHandbookVersionAction,
+  deleteHandbookVersion,
+} from './_actions/handbook-version-actions';
 import {
   sessionEditorActions,
   useSessionEditorSnapshot,
 } from './_stores/session-editor-store';
+import { useEditorImageBackfill } from './_hooks/use-editor-image-backfill';
+import { useHtmlPreviewLoading } from './_hooks/use-html-preview-loading';
+import { useSessionHydration } from './_hooks/use-session-hydration';
+import { useToolOutputListener } from './_hooks/use-tool-output-listener';
+import { useUnsavedGuard } from './_hooks/use-unsaved-guard';
+import { useVersionMenuClose } from './_hooks/use-version-menu-close';
 import {
-  applyEditorSession,
-  buildGoogleMapsCsv,
-  canEditBlocks,
   createEditorSession,
-  isRecord,
-  isToolPart,
-  toFileSlug,
   toGuidePrompt,
   type EditorSession,
   type UnknownRecord,
 } from './_lib/chat-utils';
+import { countGenerateHandbookOutputs } from './_lib/handbook-generation-utils';
+import {
+  isGeneratingHandbookPlaceholderTitle,
+} from './_lib/handbook-utils';
+import {
+  persistCachedSessionMessages,
+} from './_lib/message-cache';
+import { compactChatMessagesForChatApi } from './_lib/message-compact';
+import { toGuidePreviewPath, toPreviewAddress } from './_lib/preview-utils';
+import { patchSessionState } from './_lib/session-api';
+import { toEditorSessionSignature } from './_lib/editor-session-utils';
 import {
   CENTER_TOOLBAR_ACTION_EVENT,
   type CenterToolbarActionDetail,
@@ -45,65 +67,22 @@ import {
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
 import {
   handbooksActions,
-  handbooksStore,
   useSessionHandbooksState,
 } from '@/stores/handbooks-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useHydrateAuthStore } from '@/stores/use-hydrate-auth-store';
-import { formatSessionDate, formatSessionDateTime } from '@/lib/session-time';
-import { withTooltip } from '@/lib/tooltip';
+import { formatSessionDate } from '@/lib/session-time';
 import {
-  getHandbookStyleInstruction,
-  getHandbookStyleLabel,
   normalizeHandbookStyle,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
-import {
-  getHandbookLifecycleLabel,
-  type HandbookLifecycle,
-} from '@/lib/handbook-lifecycle';
-import { AestheticStyleSelector } from '@/components/aesthetic-style-selector';
+import { type HandbookLifecycle } from '@/lib/handbook-lifecycle';
 import { ConfirmationDialog } from '@/components/confirmation-dialog';
+import { CsvExportGuideDialog } from '@/components/csv-export-guide-dialog';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
-
-const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
-  'build_travel_blocks',
-  'resolve_spot_coordinates',
-]);
-const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
-const LEGACY_HANDBOOK_INPUT_JSON_MARKER = 'HANDBOOK_INPUT_JSON:';
-const GENERATING_HANDBOOK_TITLE = 'Generating Handbook...';
-const GENERATING_HANDBOOK_PLACEHOLDER_HTML = [
-  '<!doctype html>',
-  '<html lang="en">',
-  '<head><meta charset="utf-8"><title>Generating Handbook</title></head>',
-  '<body><main><p>Generating Handbook...</p></main></body>',
-  '</html>',
-].join('');
 function toStyleSelection(value: HandbookStyleId | null | undefined): HandbookStyleId {
   return value ?? 'minimal-tokyo';
 }
-
-type SessionHydrationPayload = {
-  session?: {
-    status?: string;
-    messages?: UIMessage[];
-    state?: {
-      context?: unknown;
-      blocks?: unknown;
-      spotBlocks?: unknown;
-      toolOutputs?: unknown;
-    } | null;
-  };
-};
-
-type PendingGeneratingHandbookVersion = {
-  handbookId: string;
-  title: string;
-  createdAt: string;
-  previousActiveHandbookId: string | null;
-  persisted: boolean;
-};
 
 type HandbookVersionMenuItem = {
   id: string;
@@ -113,551 +92,6 @@ type HandbookVersionMenuItem = {
   isPending: boolean;
   isGenerating: boolean;
 };
-
-const SESSION_MESSAGE_CACHE_KEY_PREFIX = 'session-message-cache:';
-const SESSION_MESSAGE_CACHE_VERSION = 1;
-
-type SessionMessageCacheRecord = {
-  version: number;
-  savedAt: number;
-  messages: UIMessage[];
-};
-
-function getSessionMessageCacheKey(sessionId: string): string {
-  return `${SESSION_MESSAGE_CACHE_KEY_PREFIX}${sessionId}`;
-}
-
-function isValidMessageRole(value: unknown): value is UIMessage['role'] {
-  return value === 'user' || value === 'assistant' || value === 'system';
-}
-
-function isValidUIMessage(value: unknown): value is UIMessage {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string'
-    && isValidMessageRole(record.role)
-    && Array.isArray(record.parts)
-  );
-}
-
-function readCachedSessionMessages(sessionId: string): UIMessage[] {
-  if (typeof window === 'undefined') return [];
-  const cacheKey = getSessionMessageCacheKey(sessionId);
-  const raw = window.sessionStorage.getItem(cacheKey);
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw) as SessionMessageCacheRecord;
-    if (
-      parsed?.version !== SESSION_MESSAGE_CACHE_VERSION
-      || !Array.isArray(parsed.messages)
-    ) {
-      return [];
-    }
-    if (!parsed.messages.every(isValidUIMessage)) return [];
-    return parsed.messages;
-  } catch {
-    return [];
-  }
-}
-
-function persistCachedSessionMessages(sessionId: string, messages: UIMessage[]): void {
-  if (typeof window === 'undefined') return;
-  if (!sessionId || messages.length === 0) return;
-  const cacheKey = getSessionMessageCacheKey(sessionId);
-  const payload: SessionMessageCacheRecord = {
-    version: SESSION_MESSAGE_CACHE_VERSION,
-    savedAt: Date.now(),
-    messages,
-  };
-
-  try {
-    window.sessionStorage.setItem(cacheKey, JSON.stringify(payload));
-  } catch {
-    // Ignore cache write failures (quota/private mode); hydration can still use API payload.
-  }
-}
-
-function isMessageSequencePrefix(
-  prefix: UIMessage[],
-  full: UIMessage[],
-): boolean {
-  if (prefix.length > full.length) return false;
-  for (let index = 0; index < prefix.length; index += 1) {
-    const prefixMessage = prefix[index];
-    const fullMessage = full[index];
-    if (!fullMessage) return false;
-    if (prefixMessage.id !== fullMessage.id) return false;
-    if (prefixMessage.role !== fullMessage.role) return false;
-  }
-  return true;
-}
-
-function resolveHydratedMessages(
-  persistedMessages: UIMessage[],
-  cachedMessages: UIMessage[],
-  sessionStatus: string | undefined,
-): UIMessage[] {
-  if (cachedMessages.length === 0) return persistedMessages;
-  if (persistedMessages.length === 0) return cachedMessages;
-
-  const persistedIsPrefixOfCache = isMessageSequencePrefix(
-    persistedMessages,
-    cachedMessages,
-  );
-  if (
-    persistedIsPrefixOfCache
-    && cachedMessages.length > persistedMessages.length
-  ) {
-    return cachedMessages;
-  }
-
-  const normalizedStatus = sessionStatus?.toUpperCase() ?? '';
-  if (normalizedStatus !== 'RUNNING') return persistedMessages;
-
-  return persistedMessages;
-}
-
-async function fetchSessionHydrationPayload(
-  sessionId: string,
-): Promise<SessionHydrationPayload | null> {
-  const response = await fetch(`/api/sessions/${sessionId}`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-  });
-  if (!response.ok) return null;
-  return (await response.json()) as SessionHydrationPayload;
-}
-
-function toGuidePreviewPath(path: string, fallbackHandbookId: string): string {
-  const normalized = path.split('?')[0] ?? path;
-  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-    try {
-      const url = new URL(normalized);
-      if (url.pathname.startsWith('/api/handbook/')) {
-        return `/api/guide/${fallbackHandbookId}`;
-      }
-      return url.pathname || `/api/guide/${fallbackHandbookId}`;
-    } catch {
-      return `/api/guide/${fallbackHandbookId}`;
-    }
-  }
-  if (normalized.startsWith('/api/handbook/')) {
-    return `/api/guide/${fallbackHandbookId}`;
-  }
-  return normalized;
-}
-
-function toPreviewAddress(previewUrl: string | null, fallbackPath: string): string {
-  if (!previewUrl) return fallbackPath;
-  const normalized = previewUrl.split('?')[0] ?? previewUrl;
-  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-    try {
-      return new URL(normalized).pathname || fallbackPath;
-    } catch {
-      return fallbackPath;
-    }
-  }
-  return normalized || fallbackPath;
-}
-
-function readNonEmptyString(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-function pickPreferredString(...values: unknown[]): string {
-  for (const value of values) {
-    const next = readNonEmptyString(value);
-    if (next) return next;
-  }
-  return '';
-}
-
-function getHandbookLifecycleStatusLabel(lifecycle: HandbookLifecycle): string {
-  if (lifecycle === 'ARCHIVED') return 'Archive';
-  return getHandbookLifecycleLabel(lifecycle);
-}
-
-function getHandbookLifecycleBadgeClass(lifecycle: HandbookLifecycle): string {
-  if (lifecycle === 'PUBLIC') {
-    return 'border border-[#8BD9CF] bg-[#E7F8F4] text-[#0F766E]';
-  }
-  if (lifecycle === 'ARCHIVED') {
-    return 'border border-[#DDD6CF] bg-[#F6F3F0] text-[#6B6560]';
-  }
-  return 'border border-[#EAD8B6] bg-[#FFF7E8] text-[#9A5B13]';
-}
-
-function toHandbookCreatedAtTooltip(createdAt: string | null | undefined): string {
-  const normalized = typeof createdAt === 'string' ? createdAt.trim() : '';
-  if (!normalized) return 'Created at: Unknown';
-  const timestamp = Date.parse(normalized);
-  if (!Number.isNaN(timestamp)) {
-    return `Created at: ${formatSessionDateTime(timestamp)}`;
-  }
-  return `Created at: ${normalized}`;
-}
-
-function extractSessionTitleFromToolOutput(
-  toolName: string,
-  output: unknown,
-): string | null {
-  if (!isRecord(output)) return null;
-
-  const readDirectTitle = (): string | null =>
-    readNonEmptyString(output.title)
-    ?? readNonEmptyString(output.guideTitle)
-    ?? readNonEmptyString(output.guide_title);
-
-  if (
-    toolName === 'build_travel_blocks'
-    || toolName === 'resolve_spot_coordinates'
-    || toolName === 'generate_handbook_html'
-  ) {
-    return readDirectTitle();
-  }
-
-  if (toolName !== 'crawl_youtube_videos') return null;
-
-  const directTitle = readDirectTitle();
-  if (directTitle) return directTitle;
-
-  const rawVideos = Array.isArray(output.videos) ? output.videos : [];
-  for (const rawVideo of rawVideos) {
-    if (!isRecord(rawVideo)) continue;
-    const title =
-      readNonEmptyString(rawVideo.title)
-      ?? readNonEmptyString(rawVideo.translatedTitle)
-      ?? null;
-    if (title) return title;
-  }
-
-  return null;
-}
-
-type NormalizedHandbookImage = {
-  block_id: string;
-  block_title: string;
-  query: string;
-  alt: string;
-  image_url: string;
-  source?: 'unsplash' | 'imagen';
-  source_page: string | null;
-  credit: string | null;
-  width: number | null;
-  height: number | null;
-};
-
-function normalizeHandbookImageRecord(value: unknown): NormalizedHandbookImage | null {
-  if (!isRecord(value)) return null;
-  const blockId =
-    typeof value.block_id === 'string' ? value.block_id.trim() : '';
-  const imageUrl =
-    typeof value.image_url === 'string' ? value.image_url.trim() : '';
-  if (!blockId || !imageUrl) return null;
-
-  const source =
-    value.source === 'unsplash' || value.source === 'imagen'
-      ? value.source
-      : undefined;
-  const width =
-    typeof value.width === 'number' && Number.isFinite(value.width)
-      ? value.width
-      : null;
-  const height =
-    typeof value.height === 'number' && Number.isFinite(value.height)
-      ? value.height
-      : null;
-
-  return {
-    block_id: blockId,
-    block_title:
-      typeof value.block_title === 'string' ? value.block_title.trim() : '',
-    query: typeof value.query === 'string' ? value.query.trim() : '',
-    alt: typeof value.alt === 'string' ? value.alt.trim() : '',
-    image_url: imageUrl,
-    ...(source ? { source } : {}),
-    source_page:
-      typeof value.source_page === 'string' ? value.source_page.trim() : null,
-    credit: typeof value.credit === 'string' ? value.credit.trim() : null,
-    width,
-    height,
-  };
-}
-
-function normalizeHandbookImageArray(value: unknown): NormalizedHandbookImage[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map(normalizeHandbookImageRecord)
-    .filter((image): image is NormalizedHandbookImage => image !== null);
-}
-
-function normalizeEditableImageSource(value: unknown): 'unsplash' | 'imagen' | '' {
-  return value === 'unsplash' || value === 'imagen' ? value : '';
-}
-
-function extractContextHandbookImages(context: unknown): NormalizedHandbookImage[] {
-  if (!isRecord(context)) return [];
-  const camelCaseImages = normalizeHandbookImageArray(context.handbookImages);
-  if (camelCaseImages.length > 0) return camelCaseImages;
-  return normalizeHandbookImageArray(context.handbook_images);
-}
-
-function hasOutputImageUrls(output: UnknownRecord): boolean {
-  if (!Array.isArray(output.images)) return false;
-  return output.images.some(image => {
-    if (!isRecord(image)) return false;
-    return typeof image.image_url === 'string' && image.image_url.trim() !== '';
-  });
-}
-
-function mergeImagesIntoOutputIfMissing(
-  output: UnknownRecord,
-  contextImages: NormalizedHandbookImage[],
-): UnknownRecord {
-  if (contextImages.length === 0) return output;
-  if (hasOutputImageUrls(output)) return output;
-
-  return {
-    ...output,
-    images: contextImages,
-    image_count: contextImages.length,
-    image_refs: contextImages.map(image => ({
-      block_id: image.block_id,
-      block_title: image.block_title,
-      alt: image.alt,
-      source: image.source ?? '',
-      credit: image.credit,
-    })),
-  };
-}
-
-function getOutputImagesByBlockId(
-  output: UnknownRecord,
-): Map<string, NormalizedHandbookImage> {
-  const normalizedImages = normalizeHandbookImageArray(output.images);
-  const imageByBlockId = new Map<string, NormalizedHandbookImage>();
-
-  for (const image of normalizedImages) {
-    imageByBlockId.set(image.block_id, image);
-  }
-
-  return imageByBlockId;
-}
-
-function mergeEditorSessionImages(
-  session: EditorSession,
-  sourceOutput: UnknownRecord,
-): EditorSession {
-  const imageByBlockId = getOutputImagesByBlockId(sourceOutput);
-  if (imageByBlockId.size === 0) return session;
-
-  let changed = false;
-  const nextBlocks = session.blocks.map(block => {
-    if (block.imageUrl.trim()) return block;
-    const matchedImage = imageByBlockId.get(block.block_id);
-    if (!matchedImage) return block;
-
-    changed = true;
-    const mergedImageSource = normalizeEditableImageSource(
-      block.imageSource || matchedImage.source,
-    );
-    return {
-      ...block,
-      imageUrl: matchedImage.image_url,
-      imageAlt: block.imageAlt.trim() || matchedImage.alt || block.title,
-      imageQuery: block.imageQuery.trim() || matchedImage.query,
-      imageSource: mergedImageSource,
-      imageSourcePage:
-        block.imageSourcePage.trim() || matchedImage.source_page || '',
-      imageCredit: block.imageCredit.trim() || matchedImage.credit || '',
-      imageWidth: block.imageWidth ?? matchedImage.width,
-      imageHeight: block.imageHeight ?? matchedImage.height,
-    };
-  });
-
-  if (!changed) return session;
-  return {
-    ...session,
-    blocks: nextBlocks,
-  };
-}
-
-function toPersistedBlocksOutput(
-  state: {
-    context?: unknown;
-    blocks?: unknown;
-    spotBlocks?: unknown;
-    toolOutputs?: unknown;
-  } | null | undefined,
-): { sourceKey: string; toolName: string; output: UnknownRecord } | null {
-  if (!state) return null;
-  const persistedToolOutputs = isRecord(state.toolOutputs)
-    ? (state.toolOutputs as Record<string, unknown>)
-    : null;
-  const contextRoot = isRecord(state.context) ? state.context : {};
-  const contextVideo = isRecord(contextRoot.video) ? contextRoot.video : contextRoot;
-  const contextImages = extractContextHandbookImages(state.context);
-  const withContextVideoMeta = (output: UnknownRecord): UnknownRecord =>
-    mergeImagesIntoOutputIfMissing(
-      {
-        ...output,
-        title: pickPreferredString(
-          output.title,
-          output.guideTitle,
-          output.guide_title,
-          contextVideo.title,
-        ),
-        videoId: pickPreferredString(output.videoId, output.video_id, contextVideo.videoId),
-        videoUrl: pickPreferredString(output.videoUrl, output.video_url, contextVideo.videoUrl),
-        thumbnailUrl: pickPreferredString(
-          output.thumbnailUrl,
-          output.coverImageUrl,
-          output.cover_image_url,
-          contextVideo.thumbnailUrl,
-        ),
-      },
-      contextImages,
-    );
-
-  const preferredResolveOutput = persistedToolOutputs?.resolve_spot_coordinates;
-  if (
-    isRecord(preferredResolveOutput)
-    && Array.isArray(preferredResolveOutput.blocks)
-    && preferredResolveOutput.blocks.length > 0
-  ) {
-    return {
-      sourceKey: 'persisted:resolve_spot_coordinates',
-      toolName: 'resolve_spot_coordinates',
-      output: withContextVideoMeta(preferredResolveOutput),
-    };
-  }
-
-  const preferredBuildOutput = persistedToolOutputs?.build_travel_blocks;
-  if (
-    isRecord(preferredBuildOutput)
-    && Array.isArray(preferredBuildOutput.blocks)
-    && preferredBuildOutput.blocks.length > 0
-  ) {
-    return {
-      sourceKey: 'persisted:build_travel_blocks',
-      toolName: 'build_travel_blocks',
-      output: withContextVideoMeta(preferredBuildOutput),
-    };
-  }
-
-  if (!Array.isArray(state.blocks)) return null;
-  if (state.blocks.length === 0) return null;
-
-  const fallbackSpotBlocks = Array.isArray(state.spotBlocks)
-    ? state.spotBlocks
-    : state.blocks.filter(
-        block => isRecord(block) && typeof block.type === 'string' && block.type === 'spot',
-      );
-
-  return {
-    sourceKey: 'persisted:resolve_spot_coordinates',
-    toolName: 'resolve_spot_coordinates',
-    output: mergeImagesIntoOutputIfMissing(
-      {
-        title: pickPreferredString(contextVideo.title),
-        videoId: pickPreferredString(contextVideo.videoId),
-        videoUrl: pickPreferredString(contextVideo.videoUrl),
-        thumbnailUrl: pickPreferredString(contextVideo.thumbnailUrl),
-        blockCount: state.blocks.length,
-        spotCount: fallbackSpotBlocks.length,
-        blocks: state.blocks,
-        spot_blocks: fallbackSpotBlocks,
-      },
-      contextImages,
-    ),
-  };
-}
-
-function getPersistedHandbookStyle(context: unknown): HandbookStyleId | null {
-  if (!isRecord(context)) return null;
-  const rootStyle = normalizeHandbookStyle(context.handbookStyle);
-  if (rootStyle) return rootStyle;
-
-  const nestedVideo = isRecord(context.video) ? context.video : null;
-  const nestedStyle = normalizeHandbookStyle(nestedVideo?.handbookStyle);
-  return nestedStyle;
-}
-
-function countGenerateHandbookOutputs(messages: UIMessage[]): number {
-  let count = 0;
-  for (const message of messages) {
-    for (const part of message.parts) {
-      if (!isToolPart(part)) continue;
-      if (part.type !== 'tool-generate_handbook_html') continue;
-      if (part.state !== 'output-available') continue;
-      count += 1;
-    }
-  }
-  return count;
-}
-
-function toEditorSessionSignature(session: EditorSession): string {
-  return JSON.stringify(applyEditorSession(session));
-}
-
-function isGeneratingHandbookPlaceholderTitle(value: string | null | undefined): boolean {
-  const normalized = typeof value === 'string' ? value.trim() : '';
-  return normalized === GENERATING_HANDBOOK_TITLE;
-}
-
-function compactChatMessagesForChatApi(messages: UIMessage[]): UIMessage[] {
-  let changed = false;
-  const nextMessages = messages.map(message => {
-    if (message.role !== 'user') return message;
-    let messageChanged = false;
-    const nextParts = message.parts.map(part => {
-      if (part.type !== 'text') return part;
-      const raw = part.text;
-      const trimmed = raw.trim();
-      if (
-        trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX) &&
-        trimmed.includes(LEGACY_HANDBOOK_INPUT_JSON_MARKER)
-      ) {
-        changed = true;
-        messageChanged = true;
-        return {
-          ...part,
-          text: `${MANUAL_HANDBOOK_PROMPT_PREFIX}\nUse latest session state.`,
-        };
-      }
-      return part;
-    });
-    if (!messageChanged) return message;
-    return {
-      ...message,
-      parts: nextParts,
-    };
-  });
-  return changed ? nextMessages : messages;
-}
-
-function MainContentLoadingState({ label }: { label: string }) {
-  return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary px-6 text-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-text-primary">
-          <span className="font-japanese text-[34px] font-semibold leading-none text-text-inverse">
-            旅
-          </span>
-        </div>
-        <div className="relative h-5 w-5">
-          <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-accent-primary border-r-accent-primary" />
-        </div>
-        <p className="text-[16px] font-medium text-text-secondary">{label}</p>
-      </div>
-    </div>
-  );
-}
 
 export default function Chat() {
   const params = useParams<{ id: string }>();
@@ -692,11 +126,15 @@ export default function Chat() {
     handbookError,
     centerViewMode,
     previewDevice,
+    isSavingBlocks,
   } = editorState;
 
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState('');
   const [isSessionHydrating, setIsSessionHydrating] = useState(false);
+  const [hydratedToolDurations, setHydratedToolDurations] = useState<Record<string, number>>(
+    {},
+  );
   const [handbookStyle, setHandbookStyle] = useState<HandbookStyleId | null>(
     () => normalizeHandbookStyle(initialStyle),
   );
@@ -717,45 +155,33 @@ export default function Chat() {
   >(null);
   const [isGeneratingNewHandbook, setIsGeneratingNewHandbook] = useState(false);
   const [isEditorDirty, setIsEditorDirty] = useState(false);
-  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
-  const [htmlPreviewLoadPhase, setHtmlPreviewLoadPhase] = useState<
-    'idle' | 'loading' | 'revealing'
-  >('idle');
-  const htmlPreviewRevealTimerRef = useRef<number | null>(null);
+  const [csvExportGuide, setCsvExportGuide] = useState<CsvExportGuideState | null>(
+    null,
+  );
   const versionMenuRef = useRef<HTMLDivElement | null>(null);
   const isGuestUser = authUser?.isGuest ?? true;
   useHydrateAuthStore();
 
   const didSendInitialInputRef = useRef(false);
-  const loggedToolEventsRef = useRef<Set<string>>(new Set());
-  const autoOpenedEditableSourceRef = useRef<Set<string>>(new Set());
   const pendingToolbarGenerationRef = useRef<{ beforeCount: number } | null>(null);
-  const hydratedSessionRef = useRef<string | null>(null);
-  const hydratingSessionRef = useRef<string | null>(null);
-  const activeHydrationSessionRef = useRef<string | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
-  const imageBackfillAttemptKeyRef = useRef<string | null>(null);
+  const persistingHandbookStyleKeyRef = useRef<string | null>(null);
   const pendingGeneratingHandbookVersionRef =
     useRef<PendingGeneratingHandbookVersion | null>(null);
   const lastSavedEditorSignatureRef = useRef<{
     sourceKey: string;
     signature: string;
   } | null>(null);
-  const isEditorDirtyRef = useRef(false);
-  const allowUnsafeLeaveRef = useRef(false);
-  const pendingLeaveActionRef = useRef<(() => void) | null>(null);
-  const suppressNextPopStateRef = useRef(false);
-  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const autoScrolledSessionRef = useRef<string | null>(null);
-  const pendingAutoScrollSessionRef = useRef<string | null>(null);
-  const chatScrollAnimationFrameRef = useRef<number | null>(null);
   const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
         api: '/api/chat',
-        body: { sessionId },
+        body: {
+          sessionId,
+          handbookStyle,
+        },
       }),
-    [sessionId],
+    [handbookStyle, sessionId],
   );
 
   const { messages, sendMessage, status, stop, setMessages } = useChat({
@@ -792,102 +218,38 @@ export default function Chat() {
   );
   const previewFrameWidth = previewDevice === 'mobile' ? 375 : 720;
   const previewFrameMaxHeight = 'calc(100vh - 128px)';
-  const hasHtmlPreviewSource = Boolean(handbookPreviewUrl || handbookHtml);
-  const showHtmlPreviewOverlay =
-    hasHtmlPreviewSource
-    && (htmlPreviewLoadPhase === 'loading' || htmlPreviewLoadPhase === 'revealing');
-  const previewFrameOpacityClass =
-    htmlPreviewLoadPhase === 'loading' ? 'opacity-0' : 'opacity-100';
-  const clearHtmlPreviewRevealTimer = useCallback(() => {
-    if (htmlPreviewRevealTimerRef.current !== null) {
-      window.clearTimeout(htmlPreviewRevealTimerRef.current);
-      htmlPreviewRevealTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isSessionHydrating || centerViewMode !== 'html') {
-      clearHtmlPreviewRevealTimer();
-      setHtmlPreviewLoadPhase('idle');
-      return;
-    }
-    if (!handbookPreviewUrl && !handbookHtml) {
-      clearHtmlPreviewRevealTimer();
-      setHtmlPreviewLoadPhase('idle');
-      return;
-    }
-    clearHtmlPreviewRevealTimer();
-    setHtmlPreviewLoadPhase('loading');
-  }, [
+  const {
+    htmlPreviewLoadPhase,
+    showHtmlPreviewOverlay,
+    previewFrameOpacityClass,
+    handleHtmlPreviewLoad,
+    resetHtmlPreviewLoadPhase,
+  } = useHtmlPreviewLoading({
     centerViewMode,
-    clearHtmlPreviewRevealTimer,
-    handbookHtml,
-    handbookPreviewUrl,
     isSessionHydrating,
-  ]);
+    handbookPreviewUrl,
+    handbookHtml,
+  });
 
-  useEffect(
-    () => () => {
-      clearHtmlPreviewRevealTimer();
-    },
-    [clearHtmlPreviewRevealTimer],
-  );
+  const {
+    isLeaveConfirmOpen,
+    cancelLeaveWithUnsavedWarning,
+    confirmLeaveWithUnsavedWarning,
+  } = useUnsavedGuard({
+    isDirty: isEditorDirty,
+    router,
+    resetKey: sessionId,
+  });
 
-  useEffect(() => {
-    if (htmlPreviewLoadPhase !== 'revealing') return;
-    clearHtmlPreviewRevealTimer();
-    htmlPreviewRevealTimerRef.current = window.setTimeout(() => {
-      setHtmlPreviewLoadPhase('idle');
-      htmlPreviewRevealTimerRef.current = null;
-    }, 520);
-    return () => {
-      clearHtmlPreviewRevealTimer();
-    };
-  }, [clearHtmlPreviewRevealTimer, htmlPreviewLoadPhase]);
+  useSessionHydration({
+    sessionId,
+    setMessages,
+    setHydratedToolDurations,
+    setHandbookStyle,
+    setIsSessionHydrating,
+    persistedHandbookStyleRef,
+  });
 
-  const handleHtmlPreviewLoad = useCallback(() => {
-    setHtmlPreviewLoadPhase(previous => {
-      if (previous === 'idle') return previous;
-      return 'revealing';
-    });
-  }, []);
-
-  const stopChatScrollAnimation = useCallback(() => {
-    if (chatScrollAnimationFrameRef.current === null) return;
-    window.cancelAnimationFrame(chatScrollAnimationFrameRef.current);
-    chatScrollAnimationFrameRef.current = null;
-  }, []);
-
-  const scrollChatToBottom = useCallback((durationMs = 720) => {
-    const container = chatScrollContainerRef.current;
-    if (!container) return;
-    const startTop = container.scrollTop;
-    const targetTop = Math.max(0, container.scrollHeight - container.clientHeight);
-    if (targetTop <= startTop + 1) {
-      container.scrollTop = targetTop;
-      return;
-    }
-
-    stopChatScrollAnimation();
-    const startTime = performance.now();
-    const distance = targetTop - startTop;
-
-    const animate = (now: number) => {
-      const elapsed = now - startTime;
-      const progress = Math.min(1, elapsed / durationMs);
-      const easedProgress = 1 - (1 - progress) ** 3;
-      container.scrollTop = startTop + distance * easedProgress;
-
-      if (progress < 1) {
-        chatScrollAnimationFrameRef.current = window.requestAnimationFrame(animate);
-        return;
-      }
-
-      chatScrollAnimationFrameRef.current = null;
-    };
-
-    chatScrollAnimationFrameRef.current = window.requestAnimationFrame(animate);
-  }, [stopChatScrollAnimation]);
 
   const markEditorSessionAsSaved = useCallback((session: EditorSession) => {
     lastSavedEditorSignatureRef.current = {
@@ -944,27 +306,18 @@ export default function Chat() {
     setPendingGeneratingHandbookVersion(null);
   }, [sessionId]);
 
-  const requestLeaveWithUnsavedWarning = useCallback((action: () => void) => {
-    pendingLeaveActionRef.current = action;
-    setIsLeaveConfirmOpen(true);
-  }, []);
-
-  const cancelLeaveWithUnsavedWarning = useCallback(() => {
-    pendingLeaveActionRef.current = null;
-    setIsLeaveConfirmOpen(false);
-  }, []);
-
-  const confirmLeaveWithUnsavedWarning = useCallback(() => {
-    const action = pendingLeaveActionRef.current;
-    pendingLeaveActionRef.current = null;
-    setIsLeaveConfirmOpen(false);
-    allowUnsafeLeaveRef.current = true;
-    action?.();
-
-    window.setTimeout(() => {
-      allowUnsafeLeaveRef.current = false;
-    }, 1000);
-  }, []);
+  useToolOutputListener({
+    sessionId,
+    messages,
+    editedToolOutputs,
+    currentSessionTitle: currentSessionSummary?.title,
+    activeHandbookId,
+    isGuestUser,
+    editorSession,
+    pendingGeneratingHandbookVersionRef,
+    clearPendingGeneratingHandbookVersion,
+    setIsGeneratingNewHandbook,
+  });
 
   const requireLogin = useCallback((description: string): boolean => {
     if (!isGuestUser) return true;
@@ -994,69 +347,46 @@ export default function Chat() {
     return null;
   }, [messages]);
 
-  const patchSessionState = useCallback(async (patch: Record<string, unknown>): Promise<boolean> => {
-    if (!sessionId) return false;
-
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/state`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to patch session state (${response.status})`);
+  const imageBackfillSignal = useMemo(() => {
+    let count = 0;
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (!('type' in part) || typeof part.type !== 'string') continue;
+        if (part.type !== 'tool-search_image' && part.type !== 'tool-generate_image') {
+          continue;
+        }
+        if (!('state' in part) || part.state !== 'output-available') continue;
+        count += 1;
       }
-      return true;
-    } catch (error) {
-      console.error('[chat-ui] patch-session-state-failed', {
-        sessionId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return false;
     }
-  }, [sessionId]);
+    return count;
+  }, [messages]);
 
   const persistEditorOutput = useCallback(async (
     session: EditorSession,
     output: UnknownRecord,
   ): Promise<boolean> => {
-    const blocks = Array.isArray(output.blocks) ? output.blocks : undefined;
-    const spotBlocks = Array.isArray(output.spot_blocks) ? output.spot_blocks : undefined;
-    const toolOutputs = PERSISTABLE_BLOCK_TOOL_NAMES.has(session.toolName)
-      ? { [session.toolName]: output }
-      : undefined;
-
-    if (!blocks && !spotBlocks && !toolOutputs) return true;
-
-    return patchSessionState({
-      blocks,
-      spotBlocks,
-      toolOutputs,
+    return persistEditorOutputAction({
+      sessionId,
+      session,
+      output,
     });
-  }, [patchSessionState]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) {
       setIsSessionHydrating(false);
       return;
     }
-    hydratedSessionRef.current = null;
-    hydratingSessionRef.current = null;
-    activeHydrationSessionRef.current = null;
-    autoOpenedEditableSourceRef.current = new Set();
     persistedHandbookStyleRef.current = '';
-    autoScrolledSessionRef.current = null;
-    pendingAutoScrollSessionRef.current = sessionId;
+    persistingHandbookStyleKeyRef.current = null;
     setIsSessionHydrating(true);
+    setHydratedToolDurations({});
     setHandbookStyle(null);
     setMessages([]);
     setPendingGeneratingHandbookVersion(null);
     setIsGeneratingNewHandbook(false);
     setIsEditorDirty(false);
-    setIsLeaveConfirmOpen(false);
-    pendingLeaveActionRef.current = null;
-    allowUnsafeLeaveRef.current = false;
-    suppressNextPopStateRef.current = false;
     lastSavedEditorSignatureRef.current = null;
     pendingGeneratingHandbookVersionRef.current = null;
     sessionActions.reset();
@@ -1064,36 +394,6 @@ export default function Chat() {
     sessionEditorActions.ensureSession(sessionId);
     handbooksActions.ensureSession(sessionId);
   }, [sessionId, setMessages]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    if (pendingAutoScrollSessionRef.current !== sessionId) return;
-    if (isSessionHydrating) return;
-    if (messages.length === 0) return;
-    if (autoScrolledSessionRef.current === sessionId) return;
-
-    pendingAutoScrollSessionRef.current = null;
-    autoScrolledSessionRef.current = sessionId;
-    let rafId = 0;
-    let nestedRafId = 0;
-    rafId = window.requestAnimationFrame(() => {
-      nestedRafId = window.requestAnimationFrame(() => {
-        scrollChatToBottom();
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(rafId);
-      window.cancelAnimationFrame(nestedRafId);
-    };
-  }, [isSessionHydrating, messages.length, scrollChatToBottom, sessionId]);
-
-  useEffect(
-    () => () => {
-      stopChatScrollAnimation();
-    },
-    [stopChatScrollAnimation],
-  );
 
   useEffect(() => {
     const styleFromQuery = normalizeHandbookStyle(initialStyle);
@@ -1132,80 +432,12 @@ export default function Chat() {
   }, [editorSession]);
 
   useEffect(() => {
-    isEditorDirtyRef.current = isEditorDirty;
-  }, [isEditorDirty]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
-      event.preventDefault();
-      event.returnValue = '';
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
-      if (event.defaultPrevented) return;
-      if (event.button !== 0) return;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-
-      const target = event.target as Element | null;
-      if (!target) return;
-      const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
-      if (!anchor) return;
-      if (anchor.hasAttribute('download')) return;
-      if (anchor.target && anchor.target.toLowerCase() !== '_self') return;
-
-      const href = anchor.getAttribute('href');
-      if (!href || href.startsWith('#')) return;
-
-      const currentUrl = new URL(window.location.href);
-      const nextUrl = new URL(anchor.href, currentUrl);
-      if (nextUrl.href === currentUrl.href) return;
-
-      event.preventDefault();
-      requestLeaveWithUnsavedWarning(() => {
-        const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
-        if (nextUrl.origin !== currentUrl.origin) {
-          window.location.assign(nextUrl.toString());
-          return;
-        }
-        router.push(nextPath);
-      });
-    };
-
-    document.addEventListener('click', handleDocumentClick, true);
-    return () => {
-      document.removeEventListener('click', handleDocumentClick, true);
-    };
-  }, [requestLeaveWithUnsavedWarning, router]);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      if (suppressNextPopStateRef.current) {
-        suppressNextPopStateRef.current = false;
-        return;
-      }
-      if (!isEditorDirtyRef.current || allowUnsafeLeaveRef.current) return;
-
-      window.history.go(1);
-      requestLeaveWithUnsavedWarning(() => {
-        suppressNextPopStateRef.current = true;
-        window.history.back();
-      });
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
-  }, [requestLeaveWithUnsavedWarning]);
+    if (!isSavingBlocks) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+  }, [isSavingBlocks]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1242,133 +474,45 @@ export default function Chat() {
 
   useEffect(() => {
     if (!sessionId || !handbookStyle) return;
+    if (isSessionHydrating) return;
+    if (!authUser?.id) return;
+    if (!currentSessionSummary) return;
     const styleKey = `${sessionId}:${handbookStyle}`;
     if (persistedHandbookStyleRef.current === styleKey) return;
+    if (persistingHandbookStyleKeyRef.current === styleKey) return;
 
-    persistedHandbookStyleRef.current = styleKey;
-    void patchSessionState({
-      context: {
-        handbookStyle,
-      },
-    });
-  }, [handbookStyle, patchSessionState, sessionId]);
+    persistingHandbookStyleKeyRef.current = styleKey;
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!sessionId) {
-      setIsSessionHydrating(false);
-      return;
-    }
-    if (hydratedSessionRef.current === sessionId) {
-      setIsSessionHydrating(false);
-      return;
-    }
-    if (hydratingSessionRef.current === sessionId) {
-      activeHydrationSessionRef.current = sessionId;
-      return;
-    }
+    const persistStyle = async () => {
+      const saved = await patchSessionState(sessionId, {
+        context: {
+          handbookStyle,
+        },
+      });
+      if (cancelled) return;
 
-    activeHydrationSessionRef.current = sessionId;
-    hydratingSessionRef.current = sessionId;
-    setIsSessionHydrating(true);
-
-    const hydrateSession = async () => {
-      try {
-        const payload = await fetchSessionHydrationPayload(sessionId);
-        if (activeHydrationSessionRef.current !== sessionId) return;
-
-        if (!payload?.session) {
-          hydratedSessionRef.current = null;
-          return;
-        }
-        if (activeHydrationSessionRef.current !== sessionId) return;
-
-        hydratedSessionRef.current = sessionId;
-        const persistedMessages = Array.isArray(payload.session?.messages)
-          ? payload.session.messages
-          : [];
-        const cachedMessages = readCachedSessionMessages(sessionId);
-        const hydratedMessages = resolveHydratedMessages(
-          persistedMessages,
-          cachedMessages,
-          payload.session?.status,
-        );
-        const compactedHydratedMessages = compactChatMessagesForChatApi(hydratedMessages);
-        if (compactedHydratedMessages.length > 0) {
-          setMessages(compactedHydratedMessages);
-        }
-
-        const handbookPayload = await handbooksActions.hydrateSession(sessionId);
-        const persistedHandbookStyle = getPersistedHandbookStyle(
-          payload.session?.state?.context,
-        );
-
-        if (persistedHandbookStyle) {
-          persistedHandbookStyleRef.current = `${sessionId}:${persistedHandbookStyle}`;
-          setHandbookStyle(persistedHandbookStyle);
-        }
-
-        const resolvedHandbooks = handbookPayload?.handbooks ?? [];
-        if (resolvedHandbooks.length > 0) {
-          const resolvedActiveHandbookId =
-            handbookPayload?.activeHandbookId ?? resolvedHandbooks[0]?.id ?? null;
-          sessionEditorActions.setActiveHandbookId(sessionId, resolvedActiveHandbookId);
-          if (resolvedActiveHandbookId) {
-            sessionEditorActions.setHandbookStatus(
-              sessionId,
-              'ready',
-              resolvedActiveHandbookId,
-            );
-            sessionEditorActions.setHandbookError(
-              sessionId,
-              null,
-              resolvedActiveHandbookId,
-            );
-          }
-          sessionEditorActions.setCenterViewMode(sessionId, 'html');
-        }
-
-        const persistedEditable = toPersistedBlocksOutput(payload.session?.state);
-        if (persistedEditable) {
-          sessionEditorActions.upsertEditedToolOutput(
-            sessionId,
-            persistedEditable.sourceKey,
-            persistedEditable.output,
-          );
-          const restoredEditorSession = createEditorSession(
-            persistedEditable.sourceKey,
-            persistedEditable.toolName,
-            persistedEditable.output,
-          );
-          if (restoredEditorSession && restoredEditorSession.blocks.length > 0) {
-            sessionEditorActions.setEditorSession(sessionId, restoredEditorSession);
-            if (resolvedHandbooks.length === 0) {
-              sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
-            }
-          }
-        }
-      } catch (error) {
-        if (activeHydrationSessionRef.current === sessionId) {
-          hydratedSessionRef.current = null;
-        }
-        console.error('[chat-ui] hydrate-session-failed', { sessionId, error });
-      } finally {
-        if (hydratingSessionRef.current === sessionId) {
-          hydratingSessionRef.current = null;
-        }
-        if (activeHydrationSessionRef.current === sessionId) {
-          setIsSessionHydrating(false);
-        }
+      persistingHandbookStyleKeyRef.current = null;
+      if (saved) {
+        persistedHandbookStyleRef.current = styleKey;
       }
     };
 
-    void hydrateSession();
+    void persistStyle();
 
     return () => {
-      if (activeHydrationSessionRef.current === sessionId) {
-        activeHydrationSessionRef.current = null;
+      cancelled = true;
+      if (persistingHandbookStyleKeyRef.current === styleKey) {
+        persistingHandbookStyleKeyRef.current = null;
       }
     };
-  }, [sessionId, setMessages]);
+  }, [
+    authUser?.id,
+    currentSessionSummary,
+    handbookStyle,
+    isSessionHydrating,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (didSendInitialInputRef.current) return;
@@ -1473,53 +617,17 @@ export default function Chat() {
   };
 
   const saveEditor = useCallback(async (session: EditorSession) => {
-    if (!requireLogin('Editing blocks requires an account login.')) return;
-    if (!sessionId) return;
-    const nextOutput = applyEditorSession(session);
-    sessionEditorActions.upsertEditedToolOutput(
+    await saveEditorSession({
       sessionId,
-      session.sourceKey,
-      nextOutput,
-    );
-    const saved = await persistEditorOutput(session, nextOutput);
-    if (!saved) {
-      toast.error('Failed to save blocks. Please try again.');
-      return;
-    }
-    markEditorSessionAsSaved(session);
-    toast.success('Blocks saved.');
-    console.log('[chat-ui] blocks-saved', {
-      sourceKey: session.sourceKey,
-      toolName: session.toolName,
-      blockCount: Array.isArray(nextOutput.blocks) ? nextOutput.blocks.length : 0,
+      session,
+      isSavingBlocks,
+      requireLogin,
+      markEditorSessionAsSaved,
     });
-  }, [markEditorSessionAsSaved, persistEditorOutput, requireLogin, sessionId]);
+  }, [isSavingBlocks, markEditorSessionAsSaved, requireLogin, sessionId]);
 
   const exportEditorCsv = useCallback((session: EditorSession) => {
-    const nextOutput = applyEditorSession(session);
-    const csvResult = buildGoogleMapsCsv(nextOutput);
-    if (!csvResult) {
-      alert('No spot with valid latitude/longitude to export.');
-      return;
-    }
-
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
-      now.getDate(),
-    ).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(
-      now.getMinutes(),
-    ).padStart(2, '0')}`;
-    const fileName = `${toFileSlug(session.title)}-${timestamp}.csv`;
-
-    const blob = new Blob([csvResult.csv], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
+    exportEditorSessionCsv(session, setCsvExportGuide);
   }, []);
 
   const generateHandbookFromEditor = useCallback(async (
@@ -1529,130 +637,25 @@ export default function Chat() {
       persistStyleAsDefault?: boolean;
     },
   ) => {
-    if (!requireLogin('Manual HTML generation requires an account login.')) return;
-    if (!sessionId) return;
-    if (isBusy) return;
-    const nextOutput = applyEditorSession(session);
-    const blocks = Array.isArray(nextOutput.blocks) ? nextOutput.blocks : [];
-    if (blocks.length === 0) {
-      alert('Please add at least one block before generating handbook HTML.');
-      return;
-    }
-
-    const styleId = options?.forcedStyle ?? handbookStyle ?? 'let-tabi-decide';
-    if (options?.persistStyleAsDefault) {
-      setHandbookStyle(styleId);
-    }
-    const styleLabel = getHandbookStyleLabel(styleId);
-    const styleInstruction = getHandbookStyleInstruction(styleId);
-
-    sessionEditorActions.upsertEditedToolOutput(
+    await generateHandbookFromEditorAction({
       sessionId,
-      session.sourceKey,
-      nextOutput,
-    );
-    const synced = await persistEditorOutput(session, nextOutput);
-    if (!synced) {
-      toast.error('Failed to sync blocks before generating handbook.');
-      return;
-    }
-
-    const compactedMessages = compactChatMessagesForChatApi(messages);
-    const shouldDelaySendAfterCompaction = compactedMessages !== messages;
-    if (shouldDelaySendAfterCompaction) {
-      setMessages(compactedMessages);
-    }
-
-    let persistedPendingHandbookId: string | null = null;
-    try {
-      const placeholderHandbook = await handbooksActions.createHandbook(sessionId, {
-        title: GENERATING_HANDBOOK_TITLE,
-        html: GENERATING_HANDBOOK_PLACEHOLDER_HTML,
-        lifecycle: 'DRAFT',
-        previewPath: null,
-        sourceContext: {
-          handbookGenerationStatus: 'pending',
-        },
-        style: styleId,
-        thumbnailUrl: session.thumbnailUrl ?? null,
-        setActive: true,
-      });
-      persistedPendingHandbookId = placeholderHandbook?.id ?? null;
-    } catch (error) {
-      console.error('[chat-ui] create-generating-placeholder-failed', error);
-      toast.error('Failed to prepare generating handbook version.');
-      return;
-    }
-    if (!persistedPendingHandbookId) {
-      toast.error('Failed to prepare generating handbook version.');
-      return;
-    }
-
-    const nextPendingVersion: PendingGeneratingHandbookVersion = {
-      handbookId: persistedPendingHandbookId,
-      title: GENERATING_HANDBOOK_TITLE,
-      createdAt: new Date().toISOString(),
-      previousActiveHandbookId: activeHandbookId ?? null,
-      persisted: true,
-    };
-    const previousPendingVersion = pendingGeneratingHandbookVersionRef.current;
-    if (previousPendingVersion) {
-      sessionEditorActions.removeHandbookState(sessionId, previousPendingVersion.handbookId);
-      if (previousPendingVersion.persisted) {
-        void handbooksActions.removeHandbook(
-          sessionId,
-          previousPendingVersion.handbookId,
-        ).catch(error => {
-          console.error('[chat-ui] remove-previous-pending-handbook-failed', error);
-        });
-      }
-    }
-    pendingGeneratingHandbookVersionRef.current = nextPendingVersion;
-    setPendingGeneratingHandbookVersion(nextPendingVersion);
-    setIsGeneratingNewHandbook(true);
-    setHtmlPreviewLoadPhase('idle');
-    sessionEditorActions.setHandbookHtml(sessionId, null, nextPendingVersion.handbookId);
-    sessionEditorActions.setHandbookPreviewUrl(sessionId, null, nextPendingVersion.handbookId);
-    sessionEditorActions.setHandbookStatus(
-      sessionId,
-      'generating',
-      nextPendingVersion.handbookId,
-    );
-    sessionEditorActions.setHandbookError(sessionId, null, nextPendingVersion.handbookId);
-    sessionEditorActions.setActiveHandbookId(sessionId, nextPendingVersion.handbookId);
-    sessionEditorActions.setCenterViewMode(sessionId, 'html');
-
-    const handbookInputOverrides = {
-      handbookId: nextPendingVersion.handbookId,
-      title: session.title,
-      videoId: session.videoId,
-      videoUrl: session.videoUrl,
-      thumbnailUrl: session.thumbnailUrl,
-      handbookStyle: styleId,
-    };
-    const prompt = [
-      MANUAL_HANDBOOK_PROMPT_PREFIX,
-      'Use the latest session state as handbook input (blocks/spot_blocks/tool_outputs).',
-      'Do not inline blocks/images in tool input.',
-      'If prepared images are missing, call exactly one image tool first, then generate_handbook_html once.',
-      'Do not call parse_youtube_input, crawl_youtube_videos, build_travel_blocks, or resolve_spot_coordinates.',
-      `Use handbook style: ${styleLabel}.`,
-      styleInstruction
-        ? `Style direction: ${styleInstruction}`
-        : 'If style is "Let Tabi decide", choose the most fitting visual style from the content.',
-      'HANDBOOK_INPUT_JSON:',
-      JSON.stringify(handbookInputOverrides),
-    ].join('\n');
-    pendingToolbarGenerationRef.current = {
-      beforeCount: countGenerateHandbookOutputs(compactedMessages),
-    };
-    if (shouldDelaySendAfterCompaction) {
-      window.setTimeout(() => {
-        sendMessage({ text: prompt });
-      }, 0);
-      return;
-    }
-    sendMessage({ text: prompt });
+      session,
+      options,
+      isBusy,
+      handbookStyle,
+      activeHandbookId,
+      messages,
+      requireLogin,
+      persistEditorOutput,
+      setHandbookStyle,
+      setMessages,
+      sendMessage,
+      pendingGeneratingHandbookVersionRef,
+      setPendingGeneratingHandbookVersion,
+      setIsGeneratingNewHandbook,
+      resetHtmlPreviewLoadPhase,
+      pendingToolbarGenerationRef,
+    });
   }, [
     activeHandbookId,
     handbookStyle,
@@ -1660,6 +663,7 @@ export default function Chat() {
     messages,
     persistEditorOutput,
     requireLogin,
+    resetHtmlPreviewLoadPhase,
     sendMessage,
     sessionId,
     setMessages,
@@ -1800,249 +804,13 @@ export default function Chat() {
     sessionId,
   ]);
 
-  useEffect(() => {
-    for (const message of messages) {
-      message.parts.forEach((part, partIndex) => {
-        if (!isToolPart(part)) return;
-
-        const key = `${message.id}:${partIndex}:${part.type}:${part.state}`;
-        if (loggedToolEventsRef.current.has(key)) return;
-        loggedToolEventsRef.current.add(key);
-
-        const toolName = part.type.replace('tool-', '');
-        console.log('[chat-ui] tool-state', {
-          messageId: message.id,
-          toolName,
-          state: part.state,
-        });
-
-        if (part.state === 'output-available') {
-          const sourceKey = `${message.id}:${partIndex}:${part.type}`;
-          const output = editedToolOutputs[sourceKey] ?? part.output;
-          console.log(`[chat-ui] ${toolName} output-json`, output);
-
-          const nextTitle = extractSessionTitleFromToolOutput(toolName, output);
-          if (
-            sessionId &&
-            nextTitle &&
-            nextTitle !== currentSessionSummary?.title
-          ) {
-            sessionsActions.updateSession(sessionId, {
-              title: nextTitle,
-            });
-          }
-
-          if (toolName === 'generate_handbook_html') {
-            if (!sessionId) return;
-            if (!isRecord(output)) {
-              const pending = pendingGeneratingHandbookVersionRef.current;
-              const errorTargetHandbookId = pending?.previousActiveHandbookId ?? null;
-              if (pending) {
-                clearPendingGeneratingHandbookVersion({
-                  restorePreviousActive: true,
-                  removePersisted: true,
-                });
-              }
-              sessionEditorActions.setHandbookStatus(sessionId, 'error');
-              sessionEditorActions.setHandbookError(
-                sessionId,
-                'Handbook tool returned invalid HTML output.',
-                errorTargetHandbookId,
-              );
-              sessionEditorActions.setCenterViewMode(sessionId, 'html');
-              setIsGeneratingNewHandbook(false);
-              return;
-            }
-            const handbookId =
-              typeof output.handbook_id === 'string' && output.handbook_id.trim()
-                ? output.handbook_id.trim()
-                : null;
-            const targetHandbookId = handbookId ?? activeHandbookId ?? null;
-            if (handbookId) {
-              const pending = pendingGeneratingHandbookVersionRef.current;
-              clearPendingGeneratingHandbookVersion({
-                nextActiveHandbookId: handbookId,
-                removePersisted: Boolean(
-                  pending
-                  && pending.persisted
-                  && pending.handbookId !== handbookId,
-                ),
-              });
-              void handbooksActions.hydrateSession(sessionId);
-            }
-            const rawPreviewUrl =
-              typeof output.preview_url === 'string' && output.preview_url
-                ? output.preview_url
-                : handbookId
-                  ? `/api/guide/${handbookId}`
-                  : null;
-            const previewUrl =
-              rawPreviewUrl
-                ? `${rawPreviewUrl}?v=${
-                    typeof output.generated_at === 'string'
-                      ? encodeURIComponent(output.generated_at)
-                      : Date.now()
-                  }`
-                : null;
-            const inlineHtml =
-              typeof output.html === 'string' && output.html.trim().length > 0
-                ? output.html
-                : null;
-            if (!inlineHtml && !previewUrl) {
-              const pending = pendingGeneratingHandbookVersionRef.current;
-              if (pending) {
-                clearPendingGeneratingHandbookVersion({
-                  restorePreviousActive: true,
-                  removePersisted: true,
-                });
-              }
-              sessionEditorActions.setHandbookStatus(sessionId, 'error');
-              sessionEditorActions.setHandbookError(
-                sessionId,
-                'Handbook tool did not return inline HTML or preview URL.',
-                targetHandbookId,
-              );
-              sessionEditorActions.setCenterViewMode(sessionId, 'html');
-              return;
-            }
-            sessionEditorActions.setHandbookHtml(sessionId, inlineHtml, targetHandbookId);
-            sessionEditorActions.setHandbookPreviewUrl(sessionId, previewUrl, targetHandbookId);
-            sessionEditorActions.setHandbookStatus(sessionId, 'ready', targetHandbookId);
-            sessionEditorActions.setHandbookError(sessionId, null, targetHandbookId);
-            setIsGeneratingNewHandbook(false);
-            sessionEditorActions.setCenterViewMode(sessionId, 'html');
-          }
-        }
-
-        if (part.state === 'output-error') {
-          console.error(`[chat-ui] ${toolName} output-error`, {
-            messageId: message.id,
-            errorText: part.errorText,
-          });
-
-          if (toolName === 'generate_handbook_html') {
-            if (!sessionId) return;
-            const pending = pendingGeneratingHandbookVersionRef.current;
-            const errorTargetHandbookId = pending?.previousActiveHandbookId ?? activeHandbookId;
-            if (pending) {
-              clearPendingGeneratingHandbookVersion({
-                restorePreviousActive: true,
-                removePersisted: true,
-              });
-            }
-            sessionEditorActions.setHandbookStatus(sessionId, 'error', errorTargetHandbookId);
-            sessionEditorActions.setHandbookPreviewUrl(sessionId, null, errorTargetHandbookId);
-            sessionEditorActions.setHandbookError(
-              sessionId,
-              part.errorText || 'Failed to generate handbook HTML.',
-              errorTargetHandbookId,
-            );
-            setIsGeneratingNewHandbook(false);
-            sessionEditorActions.setCenterViewMode(sessionId, 'html');
-          }
-        }
-      });
-    }
-  }, [
-    activeHandbookId,
-    clearPendingGeneratingHandbookVersion,
-    currentSessionSummary?.title,
-    editedToolOutputs,
-    messages,
+  useEditorImageBackfill({
     sessionId,
-  ]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    if (isGuestUser) return;
-    if (editorSession) return;
-
-    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-      const message = messages[messageIndex];
-      for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
-        const part = message.parts[partIndex];
-        if (!isToolPart(part)) continue;
-        if (part.state !== 'output-available') continue;
-
-        const toolName = part.type.replace('tool-', '');
-        const sourceKey = `${message.id}:${partIndex}:${part.type}`;
-        if (autoOpenedEditableSourceRef.current.has(sourceKey)) continue;
-
-        const output = editedToolOutputs[sourceKey] ?? part.output;
-        if (!canEditBlocks(toolName, part, output)) continue;
-
-        const nextEditorSession = createEditorSession(sourceKey, toolName, output);
-        if (!nextEditorSession) {
-          autoOpenedEditableSourceRef.current.add(sourceKey);
-          continue;
-        }
-        if (nextEditorSession.blocks.length === 0) {
-          autoOpenedEditableSourceRef.current.add(sourceKey);
-          continue;
-        }
-
-        sessionEditorActions.setEditorSession(sessionId, nextEditorSession);
-        sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
-        autoOpenedEditableSourceRef.current.add(sourceKey);
-        return;
-      }
-    }
-  }, [editedToolOutputs, editorSession, isGuestUser, messages, sessionId]);
-
-  useEffect(() => {
-    if (!sessionId || !editorSession) return;
-
-    if (centerViewMode !== 'blocks') {
-      imageBackfillAttemptKeyRef.current = null;
-      return;
-    }
-
-    const missingImageCount = editorSession.blocks.filter(
-      block => !block.imageUrl.trim(),
-    ).length;
-    if (missingImageCount === 0) {
-      imageBackfillAttemptKeyRef.current = null;
-      return;
-    }
-
-    const attemptKey = `${sessionId}:${editorSession.sourceKey}:${editorSession.blocks.length}`;
-    if (imageBackfillAttemptKeyRef.current === attemptKey) return;
-    imageBackfillAttemptKeyRef.current = attemptKey;
-
-    let cancelled = false;
-    const backfillEditorImages = async () => {
-      try {
-        const payload = await fetchSessionHydrationPayload(sessionId);
-        if (cancelled) return;
-        const persistedEditable = toPersistedBlocksOutput(payload?.session?.state);
-        if (!persistedEditable) return;
-        const mergedSession = mergeEditorSessionImages(
-          editorSession,
-          persistedEditable.output,
-        );
-        if (mergedSession === editorSession) return;
-
-        sessionEditorActions.setEditorSession(sessionId, mergedSession);
-        sessionEditorActions.upsertEditedToolOutput(
-          sessionId,
-          mergedSession.sourceKey,
-          applyEditorSession(mergedSession),
-        );
-        markEditorSessionAsSaved(mergedSession);
-      } catch (error) {
-        console.warn('[chat-ui] editor-image-backfill-failed', {
-          sessionId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    };
-
-    void backfillEditorImages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [centerViewMode, editorSession, markEditorSessionAsSaved, sessionId]);
+    centerViewMode,
+    editorSession,
+    backfillSignal: imageBackfillSignal,
+    markEditorSessionAsSaved,
+  });
 
   const headerSubtitle = processState.stopped
     ? `Stopped at ${formatToolLabel(processState.currentStep)}`
@@ -2145,39 +913,12 @@ export default function Chat() {
     sessionId,
   ]);
 
-  useEffect(() => {
-    if (!isVersionMenuOpen) return;
-
-    const closeMenu = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (target && versionMenuRef.current?.contains(target)) return;
-      setIsVersionMenuOpen(false);
-    };
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setIsVersionMenuOpen(false);
-    };
-
-    const closeOnScroll = () => setIsVersionMenuOpen(false);
-
-    window.addEventListener('mousedown', closeMenu);
-    window.addEventListener('keydown', closeOnEscape);
-    window.addEventListener('scroll', closeOnScroll, true);
-    window.addEventListener('blur', closeOnScroll);
-
-    return () => {
-      window.removeEventListener('mousedown', closeMenu);
-      window.removeEventListener('keydown', closeOnEscape);
-      window.removeEventListener('scroll', closeOnScroll, true);
-      window.removeEventListener('blur', closeOnScroll);
-    };
-  }, [isVersionMenuOpen]);
-
-  useEffect(() => {
-    if (showHtmlView) return;
-    setIsVersionMenuOpen(false);
-  }, [showHtmlView]);
+  useVersionMenuClose({
+    isOpen: isVersionMenuOpen,
+    showHtmlView,
+    menuRef: versionMenuRef,
+    setIsOpen: setIsVersionMenuOpen,
+  });
 
   const activateHandbookVersion = useCallback(async (nextHandbookId: string) => {
     if (!sessionId || !nextHandbookId) return;
@@ -2185,16 +926,14 @@ export default function Chat() {
       setIsVersionMenuOpen(false);
       return;
     }
-    const previousActiveHandbookId = activeHandbookId;
-    sessionEditorActions.setActiveHandbookId(sessionId, nextHandbookId);
     setIsVersionMenuOpen(false);
     try {
-      await handbooksActions.setActiveHandbook(sessionId, nextHandbookId);
-    } catch (error) {
-      sessionEditorActions.setActiveHandbookId(
+      await activateHandbookVersionAction({
         sessionId,
-        previousActiveHandbookId ?? null,
-      );
+        nextHandbookId,
+        activeHandbookId,
+      });
+    } catch (error) {
       console.error('[chat-ui] activate-handbook-version-failed', error);
       toast.error(error instanceof Error ? error.message : 'Failed to switch handbook.');
     }
@@ -2212,18 +951,13 @@ export default function Chat() {
     setPendingDeleteHandbookVersionId(null);
     setIsRemovingHandbookVersion(true);
     try {
-      const removed = await handbooksActions.removeHandbook(sessionId, handbookId);
-      if (!removed) {
+      const result = await deleteHandbookVersion({
+        sessionId,
+        handbookId,
+      });
+      if (!result.removed) {
         toast.error('Handbook not found.');
         return;
-      }
-
-      sessionEditorActions.removeHandbookState(sessionId, handbookId);
-      const nextActiveHandbookId =
-        handbooksStore.getState().bySessionId[sessionId]?.activeHandbookId ?? null;
-      sessionEditorActions.setActiveHandbookId(sessionId, nextActiveHandbookId);
-      if (!nextActiveHandbookId) {
-        sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
       }
       toast.success('Handbook deleted.');
     } catch (error) {
@@ -2235,470 +969,193 @@ export default function Chat() {
     }
   }, [pendingDeleteHandbookVersionId, sessionId]);
 
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    if (inputError) setInputError('');
+  }, [inputError]);
+
+  const handleChatSubmit = useCallback(() => {
+    if (!requireLogin('Sending chat messages requires an account login.')) return;
+    const prompt = toGuidePrompt(input);
+    if (!prompt) {
+      setInputError('Please enter a prompt or YouTube URL.');
+      return;
+    }
+
+    const compactedMessages = compactChatMessagesForChatApi(messages);
+    const shouldDelaySendAfterCompaction = compactedMessages !== messages;
+    if (shouldDelaySendAfterCompaction) {
+      setMessages(compactedMessages);
+      window.setTimeout(() => {
+        sendMessage({ text: prompt });
+      }, 0);
+    } else {
+      sendMessage({ text: prompt });
+    }
+    setInput('');
+    setInputError('');
+  }, [input, messages, requireLogin, sendMessage, setMessages]);
+
+  const handleStopRequest = useCallback(async () => {
+    await stop();
+    sessionActions.markStopped();
+    if (sessionId) {
+      sessionsActions.updateSession(sessionId, {
+        meta: 'Stopped',
+        isError: false,
+        status: 'cancelled',
+        lastStep: processState.currentStep,
+      });
+      void fetch(`/api/sessions/${sessionId}/cancel`, {
+        method: 'POST',
+      });
+    }
+  }, [processState.currentStep, sessionId, stop]);
+
+  const handleSelectHandbookVersion = useCallback((handbook: HandbookVersionMenuItem) => {
+    if (handbook.isPending) {
+      sessionEditorActions.setActiveHandbookId(sessionId, handbook.id);
+      setIsVersionMenuOpen(false);
+      return;
+    }
+    void activateHandbookVersion(handbook.id);
+  }, [activateHandbookVersion, sessionId, setIsVersionMenuOpen]);
+
+  const hasRenderableHandbook =
+    handbookStatus === 'ready' || Boolean(handbookPreviewUrl || handbookHtml);
+  const showStyleConfirmModal = Boolean(
+    isStyleConfirmOpen && showBlocksView && pendingStyleSession,
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-elevated">
-      <div className="border-b border-border-light px-5 pb-4 pt-5">
-        <div className="min-w-0">
-          <h1 className="truncate text-[15px] font-semibold leading-[1.35] text-text-primary">
-            {currentSessionSummary?.title || 'Untitled Guide'}
-          </h1>
-          <p className="mt-1 text-[12px] font-medium leading-4 text-text-tertiary">
-            {headerSubtitle}
-          </p>
-        </div>
-      </div>
+      <ChatHeader
+        title={currentSessionSummary?.title || 'Untitled Guide'}
+        subtitle={headerSubtitle}
+      />
 
-      <div ref={chatScrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {firstUserTextMessage && (
-          <div className="sticky top-0 z-20 mb-4 -mx-1 px-1 pb-1 pt-0">
-            <div className="rounded-[12px] bg-accent-primary px-4 py-4 shadow-[0_8px_20px_rgba(0,0,0,0.12)]">
-              <p className="whitespace-pre-wrap break-words text-[13px] font-medium leading-[1.55] text-text-inverse">
-                {firstUserTextMessage.text}
-              </p>
-            </div>
-          </div>
-        )}
+      <ChatMessages
+        sessionId={sessionId}
+        isSessionHydrating={isSessionHydrating}
+        messages={messages}
+        firstUserTextMessage={firstUserTextMessage}
+        editedToolOutputs={editedToolOutputs}
+        persistedToolDurations={hydratedToolDurations}
+        handbookStyle={handbookStyle}
+        isRequestBusy={isBusy}
+        hasRenderableHandbook={hasRenderableHandbook}
+        onOpenEditor={openEditor}
+      />
 
-        <div className="space-y-4">
-          {messages.length === 0 && (
-            <p className="py-8 text-center text-[13px] text-text-tertiary">
-              Paste a YouTube travel video link to start.
-            </p>
-          )}
-          {messages.map(message => {
-            const isUser = message.role === 'user';
-            const isSystem = message.role === 'system';
-            if (firstUserTextMessage && isUser && message.id === firstUserTextMessage.id) {
-              return null;
-            }
-
-            return (
-              <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`${
-                    isUser
-                      ? 'max-w-[92%] rounded-[12px] bg-accent-primary px-4 py-4 text-text-inverse'
-                      : isSystem
-                        ? 'max-w-[92%] rounded-[12px] border border-border-light bg-bg-secondary px-4 py-3 text-text-secondary'
-                        : 'w-full max-w-full text-text-primary'
-                  }`}
-                >
-                  {isSystem && (
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-secondary">
-                      System
-                    </p>
-                  )}
-                  <MessageContent
-                    message={message}
-                    editedToolOutputs={editedToolOutputs}
-                    handbookStyle={handbookStyle}
-                    isRequestBusy={isBusy}
-                    hasRenderableHandbook={
-                      handbookStatus === 'ready' || Boolean(handbookPreviewUrl || handbookHtml)
-                    }
-                    onOpenEditor={openEditor}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <form
-        className="border-t border-border-light bg-bg-elevated px-4 py-4"
-        onSubmit={e => {
-          e.preventDefault();
-          if (!requireLogin('Sending chat messages requires an account login.')) return;
-          const prompt = toGuidePrompt(input);
-          if (!prompt) {
-            setInputError('Please enter a prompt or YouTube URL.');
-            return;
-          }
-
-          const compactedMessages = compactChatMessagesForChatApi(messages);
-          const shouldDelaySendAfterCompaction = compactedMessages !== messages;
-          if (shouldDelaySendAfterCompaction) {
-            setMessages(compactedMessages);
-            window.setTimeout(() => {
-              sendMessage({ text: prompt });
-            }, 0);
-          } else {
-            sendMessage({ text: prompt });
-          }
-          setInput('');
-          setInputError('');
-        }}
-      >
-        <div className="w-full">
-          <div className="flex items-center gap-3">
-            <input
-              id="chat-input"
-              className="h-11 w-full rounded-[12px] border border-transparent bg-bg-secondary px-4 text-[14px] text-text-primary outline-none transition placeholder:text-text-tertiary focus:border-accent-primary focus:bg-bg-elevated"
-              value={input}
-              placeholder="Ask me to refine the guide..."
-              onChange={e => {
-                setInput(e.currentTarget.value);
-                if (inputError) setInputError('');
-              }}
-            />
-            {isBusy ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  await stop();
-                  sessionActions.markStopped();
-                  if (sessionId) {
-                    sessionsActions.updateSession(sessionId, {
-                      meta: 'Stopped',
-                      isError: false,
-                      status: 'cancelled',
-                      lastStep: processState.currentStep,
-                    });
-                    void fetch(`/api/sessions/${sessionId}/cancel`, {
-                      method: 'POST',
-                    });
-                  }
-                }}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#D4D0CB] transition hover:brightness-95"
-              >
-                <span className="h-[14px] w-[14px] rounded-[2px] bg-[#9C968F]" aria-hidden />
-                <span className="sr-only">Stop</span>
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-accent-primary text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
-              >
-                <LuSendHorizontal className="h-[18px] w-[18px]" />
-                <span className="sr-only">Send</span>
-              </button>
-            )}
-          </div>
-          {inputError && <p className="mt-1 text-[11px] font-medium ui-text-error">{inputError}</p>}
-        </div>
-      </form>
+      <ChatInput
+        value={input}
+        inputError={inputError}
+        isBusy={isBusy}
+        onChange={handleInputChange}
+        onSubmit={handleChatSubmit}
+        onStop={handleStopRequest}
+      />
 
       {editorHost && shouldRenderPreviewPortal
         ? createPortal(
             <div className="absolute inset-0">
               {showHtmlView && !isSessionHydrating && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-bg-primary px-6 pt-0">
-                  <div
-                    className="relative h-full overflow-hidden rounded-[12px] border border-border-light bg-bg-elevated transition-[width,max-height] duration-200"
-                    style={{
-                      width: `min(100%, ${previewFrameWidth}px)`,
-                      maxWidth: '100%',
-                      maxHeight: previewFrameMaxHeight,
-                    }}
-                  >
-                    <div className="flex h-10 items-center gap-3 border-b border-border-light bg-bg-secondary px-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-3 w-3 rounded-full bg-rose-500" />
-                        <span className="h-3 w-3 rounded-full bg-amber-400" />
-                        <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                      </div>
-                      <div className="relative flex h-7 flex-1 items-center" ref={versionMenuRef}>
-                        <button
-                          type="button"
-                          onClick={() => setIsVersionMenuOpen(open => !open)}
-                          disabled={
-                            handbookVersionMenuItems.length === 0
-                            || isSessionHydrating
-                            || isRemovingHandbookVersion
-                          }
-                          className={`inline-flex h-7 w-full items-center gap-2 px-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                            isVersionMenuOpen
-                              ? 'rounded-t-[6px] rounded-b-none border border-border-light border-b-0 bg-bg-elevated shadow-[0_10px_24px_rgba(45,42,38,0.14)]'
-                              : 'rounded-[6px] bg-bg-elevated hover:bg-bg-primary'
-                          }`}
-                        >
-                          {activeHandbook && (
-                            <span
-                              className={`inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
-                                activeHandbook.lifecycle,
-                              )}`}
-                            >
-                              {getHandbookLifecycleStatusLabel(activeHandbook.lifecycle)}
-                            </span>
-                          )}
-                          <span className="min-w-0 flex-1 truncate text-[12px] font-normal text-text-primary">
-                            {previewAddress}
-                          </span>
-                          <LuChevronDown
-                            className={`h-3 w-3 shrink-0 text-[#9C968F] transition-transform ${
-                              isVersionMenuOpen ? 'rotate-180' : ''
-                            }`}
-                          />
-                        </button>
-                        {isVersionMenuOpen && (
-                          <div className="absolute left-0 right-0 top-full z-30 w-full overflow-visible rounded-b-[10px] rounded-t-none border border-border-light border-t-0 bg-bg-elevated p-1">
-                            {handbookVersionMenuItems.map(handbook => {
-                              const selected = handbook.id === activeHandbookId;
-                              const createdAtTooltip = toHandbookCreatedAtTooltip(
-                                handbook.createdAt,
-                              );
-                              return (
-                                <div
-                                  key={handbook.id}
-                                  className={`flex items-center gap-1 rounded-[7px] px-1 py-[4px] transition ${
-                                    selected ? 'bg-bg-secondary' : 'hover:bg-bg-primary'
-                                  }`}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (handbook.isPending) {
-                                        sessionEditorActions.setActiveHandbookId(
-                                          sessionId,
-                                          handbook.id,
-                                        );
-                                        setIsVersionMenuOpen(false);
-                                        return;
-                                      }
-                                      void activateHandbookVersion(handbook.id);
-                                    }}
-                                    className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-[8px] py-[4px] text-left"
-                                  >
-                                    <span
-                                      data-tooltip={createdAtTooltip}
-                                      className={withTooltip(
-                                        `inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-[1px] text-[10px] font-semibold ${getHandbookLifecycleBadgeClass(
-                                          handbook.lifecycle,
-                                        )}`,
-                                      )}
-                                    >
-                                      {getHandbookLifecycleStatusLabel(handbook.lifecycle)}
-                                    </span>
-                                    <span className="min-w-0 flex-1">
-                                      <span className="block truncate text-[12px] font-medium text-text-primary">
-                                        {handbook.title || 'Untitled guide'}
-                                      </span>
-                                      <span className="block truncate text-[11px] text-text-secondary">
-                                        {handbook.isGenerating
-                                          ? 'Generating Handbook...'
-                                          : `/api/guide/${handbook.id}`}
-                                      </span>
-                                    </span>
-                                    {handbook.isGenerating && (
-                                      <LuRefreshCw className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-primary" />
-                                    )}
-                                  </button>
-                                  {!handbook.isPending && (
-                                    <button
-                                      type="button"
-                                      onClick={() => requestDeleteHandbookVersion(handbook.id)}
-                                      disabled={isRemovingHandbookVersion}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-[#9C968F] transition hover:bg-bg-elevated hover:text-accent-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                                      aria-label={`Delete ${handbook.title || 'Untitled guide'}`}
-                                    >
-                                      <LuTrash2 className="h-[14px] w-[14px]" />
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="relative h-[calc(100%-40px)] overflow-hidden bg-bg-elevated">
-                      {!showNewHandbookLoadingState && handbookPreviewUrl && (
-                        <iframe
-                          title="Guide Preview"
-                          src={handbookPreviewUrl}
-                          className={`absolute inset-0 h-full w-full bg-bg-elevated transition-opacity duration-500 ease-out ${previewFrameOpacityClass}`}
-                          onLoad={handleHtmlPreviewLoad}
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                        />
-                      )}
-
-                      {!showNewHandbookLoadingState && !handbookPreviewUrl && handbookHtml && (
-                        <iframe
-                          title="Guide Preview"
-                          srcDoc={handbookHtml}
-                          className={`absolute inset-0 h-full w-full bg-bg-elevated transition-opacity duration-500 ease-out ${previewFrameOpacityClass}`}
-                          onLoad={handleHtmlPreviewLoad}
-                          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                        />
-                      )}
-
-                      {showNewHandbookLoadingState && (
-                        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white">
-                          <div className="flex flex-col items-center gap-2">
-                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
-                            <p className="text-[13px] font-medium text-text-secondary">
-                              Generating Handbook...
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {showHtmlPreviewOverlay && (
-                        <div
-                          className={`absolute inset-0 z-10 flex items-center justify-center transition-[background-color] duration-500 ${
-                            htmlPreviewLoadPhase === 'loading'
-                              ? 'bg-bg-elevated'
-                              : 'bg-bg-elevated/78'
-                          }`}
-                        >
-                          <div
-                            className={`flex flex-col items-center gap-2 transition-opacity duration-300 ${
-                              htmlPreviewLoadPhase === 'revealing' ? 'opacity-95' : 'opacity-100'
-                            }`}
-                          >
-                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
-                            <p className="text-[13px] font-medium text-text-secondary">
-                              Loading preview...
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {!showNewHandbookLoadingState &&
-                        !handbookPreviewUrl &&
-                        !handbookHtml &&
-                        handbookStatus === 'generating' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-white">
-                          <div className="flex flex-col items-center gap-2">
-                            <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
-                            <p className="text-[13px] font-medium text-text-secondary">
-                              Generating Handbook...
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {!handbookHtml && handbookStatus === 'error' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
-                          <p className="max-w-lg text-sm font-medium text-status-error">
-                            {handbookError || 'Failed to generate guide HTML.'}
-                          </p>
-                        </div>
-                      )}
-
-                      {!handbookPreviewUrl &&
-                        !handbookHtml &&
-                        handbookStatus !== 'generating' &&
-                        handbookStatus !== 'error' && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
-                            <p className="max-w-lg text-sm font-medium text-text-tertiary">
-                              No guide HTML yet. Generate once, then switch between HTML and
-                              blocks without regenerating.
-                            </p>
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                </div>
+                <SessionHtmlPanel
+                  isSessionHydrating={isSessionHydrating}
+                  previewFrameWidth={previewFrameWidth}
+                  previewFrameMaxHeight={previewFrameMaxHeight}
+                  previewFrameOpacityClass={previewFrameOpacityClass}
+                  showNewHandbookLoadingState={showNewHandbookLoadingState}
+                  showHtmlPreviewOverlay={showHtmlPreviewOverlay}
+                  htmlPreviewLoadPhase={htmlPreviewLoadPhase}
+                  handbookPreviewUrl={handbookPreviewUrl}
+                  handbookHtml={handbookHtml}
+                  handbookStatus={handbookStatus}
+                  handbookError={handbookError}
+                  onHtmlPreviewLoad={handleHtmlPreviewLoad}
+                  handbookVersionMenuItems={handbookVersionMenuItems}
+                  activeHandbookId={activeHandbookId}
+                  activeHandbook={activeHandbook}
+                  previewAddress={previewAddress}
+                  isVersionMenuOpen={isVersionMenuOpen}
+                  isRemovingHandbookVersion={isRemovingHandbookVersion}
+                  versionMenuRef={versionMenuRef}
+                  onToggleVersionMenu={() => setIsVersionMenuOpen(open => !open)}
+                  onSelectHandbook={handleSelectHandbookVersion}
+                  onRequestDeleteHandbook={requestDeleteHandbookVersion}
+                />
               )}
 
-              {showBlocksView && editorSession && !isSessionHydrating && (
-                <div className="absolute inset-0 z-20">
-                  <BlockEditorWorkspace
-                    session={editorSession}
-                    onChange={nextSession => {
-                      sessionEditorActions.setEditorSession(sessionId, nextSession);
-                    }}
-                  />
-                </div>
-              )}
-
-              {showBlocksView &&
-                !editorSession &&
-                !showBlocksLoadingState &&
-                !isSessionHydrating && (
-                <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
-                  <p className="max-w-lg text-sm font-medium text-text-tertiary">
-                    No editable blocks available yet. Once resolve output is ready, blocks editor
-                    will open automatically here.
-                  </p>
-                </div>
+              {showBlocksView && (
+                <SessionBlocksPanel
+                  editorSession={editorSession}
+                  isSessionHydrating={isSessionHydrating}
+                  isSavingBlocks={isSavingBlocks}
+                  onChangeEditorSession={nextSession => {
+                    sessionEditorActions.setEditorSession(sessionId, nextSession);
+                  }}
+                  showBlocksLoadingState={showBlocksLoadingState}
+                />
               )}
 
               {(isSessionHydrating || showBlocksLoadingState) && (
-                <MainContentLoadingState label={centerLoadingLabel} />
+                <SessionLoadingOverlay label={centerLoadingLabel} />
               )}
 
-              {isStyleConfirmOpen && showBlocksView && pendingStyleSession && (
-                <div
-                  className="absolute inset-0 z-40 flex items-center justify-center bg-[#2D2A26]/38 px-6 backdrop-blur-[2px]"
-                  onClick={closeStyleConfirmModal}
-                >
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Choose style for this generation"
-                    className="w-full max-w-[520px] rounded-[20px] border border-border-light bg-bg-elevated p-6 shadow-[0_16px_42px_rgba(26,23,20,0.14)]"
-                    onClick={event => event.stopPropagation()}
-                  >
-                    <div className="space-y-1.5">
-                      <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
-                        Before Generate
-                      </p>
-                      <h2 className="text-[28px] font-bold tracking-[-0.02em] text-text-primary">
-                        Choose your guide&apos;s aesthetic
-                      </h2>
-                      <p className="text-[13px] leading-[1.45] text-text-secondary">
-                        Match your channel&apos;s visual identity for this run.
-                      </p>
-                    </div>
-
-                    <p className="mt-6 text-[15px] font-semibold text-text-primary">
-                      Aesthetic
-                    </p>
-                    <AestheticStyleSelector
-                      className="mt-3"
-                      value={selectedStyleOption}
-                      onChange={setSelectedStyleOption}
-                      disabled={isBusy}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setSetAsSessionDefault(value => !value)}
-                      className="mt-5 inline-flex items-center gap-2 rounded-[8px] py-1 text-left"
-                    >
-                      <span
-                        className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-[5px] transition ${
-                          setAsSessionDefault
-                            ? 'bg-accent-primary text-text-inverse'
-                            : 'border border-border-default bg-bg-elevated text-transparent'
-                        }`}
-                      >
-                        <LuCheck className="h-3 w-3" />
-                      </span>
-                      <span className="text-[13px] font-medium text-text-secondary">
-                        Set as session default
-                      </span>
-                    </button>
-
-                    <div className="mt-6 flex justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={closeStyleConfirmModal}
-                        className="inline-flex h-11 items-center justify-center rounded-[12px] border border-border-light bg-bg-secondary px-[18px] text-[14px] font-semibold text-text-secondary transition hover:bg-bg-elevated"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={submitStyleConfirmGenerate}
-                        disabled={isBusy}
-                        className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[14px] bg-gradient-to-r from-[#F97066] to-[#FB923C] px-5 text-[14px] font-semibold text-text-inverse transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <span>Generate</span>
-                        <LuArrowRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <SessionStyleConfirmModal
+                open={showStyleConfirmModal}
+                selectedStyleOption={selectedStyleOption}
+                setSelectedStyleOption={setSelectedStyleOption}
+                setAsSessionDefault={setAsSessionDefault}
+                onToggleSetAsSessionDefault={() => setSetAsSessionDefault(value => !value)}
+                isBusy={isBusy}
+                onClose={closeStyleConfirmModal}
+                onSubmit={submitStyleConfirmGenerate}
+              />
             </div>,
             editorHost,
           )
         : null}
+      <CsvExportGuideDialog
+        open={Boolean(csvExportGuide)}
+        fieldsLine={csvExportGuide?.fieldsLine ?? ''}
+        previewText={csvExportGuide?.previewText ?? ''}
+        onClose={() => setCsvExportGuide(null)}
+        onDownloadCsv={() => {
+          if (!csvExportGuide?.csvContent || !csvExportGuide.fileName) return;
+          const blob = new Blob([csvExportGuide.csvContent], {
+            type: 'text/csv;charset=utf-8;',
+          });
+          const url = window.URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = csvExportGuide.fileName;
+          document.body.append(anchor);
+          anchor.click();
+          anchor.remove();
+          window.URL.revokeObjectURL(url);
+          const openMapsUrl = csvExportGuide.openMapsUrl || 'https://www.google.com/maps/d/u/0/';
+          toast.success('CSV downloaded.', {
+            description: 'Open My Maps with your current route.',
+            action: {
+              label: 'Open My Maps',
+              onClick: () => {
+                window.open(openMapsUrl, '_blank', 'noopener,noreferrer');
+              },
+            },
+            actionButtonStyle: {
+              background: '#E7F8F4',
+              border: '1px solid #8BD9CF',
+              color: '#0F766E',
+              fontWeight: 600,
+            },
+          });
+        }}
+        onOpenMaps={() => {
+          const openMapsUrl = csvExportGuide?.openMapsUrl || 'https://www.google.com/maps/d/u/0/';
+          window.open(openMapsUrl, '_blank', 'noopener,noreferrer');
+        }}
+      />
       <DeleteConfirmationDialog
         open={Boolean(pendingDeleteHandbookVersionId)}
         title="Delete Handbook?"

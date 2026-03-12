@@ -7,6 +7,7 @@ import {
   Playfair_Display,
 } from "next/font/google";
 import { Toaster } from "sonner";
+import { UtmTracker } from "@/components/utm-tracker";
 import "./globals.css";
 
 const inter = Inter({
@@ -58,6 +59,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetBrainsMono.variable} ${notoSansJp.variable} ${playfairDisplay.variable} ${dancingScript.variable} antialiased`}
       >
         {children}
+        <UtmTracker />
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

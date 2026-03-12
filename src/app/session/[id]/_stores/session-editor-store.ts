@@ -29,6 +29,7 @@ export interface SessionEditorSnapshot {
   handbookError: string | null;
   centerViewMode: CenterViewMode;
   previewDevice: PreviewDevice;
+  isSavingBlocks: boolean;
 }
 
 interface SessionEditorStoreState {
@@ -37,6 +38,7 @@ interface SessionEditorStoreState {
   resetSession: (sessionId: string) => void;
   setEditorSession: (sessionId: string, session: EditorSession | null) => void;
   upsertEditedToolOutput: (sessionId: string, sourceKey: string, output: UnknownRecord) => void;
+  setIsSavingBlocks: (sessionId: string, isSaving: boolean) => void;
   setActiveHandbookId: (sessionId: string, handbookId: string | null) => void;
   hydrateHandbooks: (
     sessionId: string,
@@ -85,6 +87,7 @@ const EMPTY_SNAPSHOT: SessionEditorSnapshot = {
   handbookError: null,
   centerViewMode: 'blocks',
   previewDevice: 'desktop',
+  isSavingBlocks: false,
 };
 
 const LEGACY_HANDBOOK_ID = '__legacy_handbook__';
@@ -101,6 +104,7 @@ function createEmptySnapshot(): SessionEditorSnapshot {
     handbookError: null,
     centerViewMode: 'blocks',
     previewDevice: 'desktop',
+    isSavingBlocks: false,
   };
 }
 
@@ -242,13 +246,36 @@ const useSessionEditorZustandStore = create<SessionEditorStoreState>((set, get) 
     });
   },
 
+  setIsSavingBlocks(sessionId, isSaving) {
+    if (!sessionId) return;
+    set(state => {
+      const current = getOrCreateSnapshot(state, sessionId);
+      if (current.isSavingBlocks === isSaving) return state;
+      return {
+        ...state,
+        bySessionId: {
+          ...state.bySessionId,
+          [sessionId]: {
+            ...current,
+            isSavingBlocks: isSaving,
+          },
+        },
+      };
+    });
+  },
+
   setActiveHandbookId(sessionId, handbookId) {
     if (!sessionId) return;
     set(state => {
       const current = getOrCreateSnapshot(state, sessionId);
+      const nextStates = { ...current.handbookStates };
+      if (handbookId && !nextStates[handbookId]) {
+        nextStates[handbookId] = createEmptyHandbookState(handbookId);
+      }
       const nextSnapshot = withProjectedActiveHandbook({
         ...current,
         activeHandbookId: handbookId,
+        handbookStates: nextStates,
       });
       if (
         nextSnapshot.activeHandbookId === current.activeHandbookId
@@ -293,9 +320,22 @@ const useSessionEditorZustandStore = create<SessionEditorStoreState>((set, get) 
         };
       }
 
+      const payloadActiveId = payload.activeHandbookId;
+      let nextActiveHandbookId = payloadActiveId;
+      if (
+        current.activeHandbookId
+        && current.activeHandbookId !== payloadActiveId
+        && nextStates[current.activeHandbookId]
+      ) {
+        nextActiveHandbookId = current.activeHandbookId;
+      }
+      if (nextActiveHandbookId && !nextStates[nextActiveHandbookId]) {
+        nextActiveHandbookId = payloadActiveId ?? null;
+      }
+
       const nextSnapshot = withProjectedActiveHandbook({
         ...current,
-        activeHandbookId: payload.activeHandbookId,
+        activeHandbookId: nextActiveHandbookId,
         handbookStates: nextStates,
       });
 
@@ -462,6 +502,8 @@ export const sessionEditorActions = {
     useSessionEditorZustandStore
       .getState()
       .upsertEditedToolOutput(sessionId, sourceKey, output),
+  setIsSavingBlocks: (sessionId: string, isSaving: boolean) =>
+    useSessionEditorZustandStore.getState().setIsSavingBlocks(sessionId, isSaving),
   setActiveHandbookId: (sessionId: string, handbookId: string | null) =>
     useSessionEditorZustandStore.getState().setActiveHandbookId(sessionId, handbookId),
   hydrateHandbooks: (

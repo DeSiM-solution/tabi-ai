@@ -181,3 +181,14 @@ model SessionState {
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
+
+model UtmTracking {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  utmSource   String
+  utmCampaign String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([utmSource, utmCampaign, createdAt(sort: Desc)])
+}

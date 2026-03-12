@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type DragEvent,
 } from 'react';
 import type { IconType } from 'react-icons/lib';
 import { createPortal } from 'react-dom';
@@ -23,6 +24,7 @@ import {
   LuChevronDown,
   LuChevronUp,
   LuEllipsisVertical,
+  LuLoaderCircle,
 } from 'react-icons/lu';
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog';
 import { withTooltip } from '@/lib/tooltip';
@@ -36,12 +38,15 @@ import {
 interface BlockEditorWorkspaceProps {
   session: EditorSession | null;
   onChange: (session: EditorSession) => void;
+  disabled?: boolean;
 }
 
 interface FloatingToolbarPosition {
   top: number;
   left: number;
 }
+
+type DragPosition = 'before' | 'after';
 
 const BLOCK_TYPE_META: Record<
   (typeof BLOCK_TYPES)[number],
@@ -101,6 +106,7 @@ const TOOLBAR_CLOSE_SCROLL_THRESHOLD = 56;
 export function BlockEditorWorkspace({
   session,
   onChange,
+  disabled = false,
 }: BlockEditorWorkspaceProps) {
   const [advancedOpenByBlockId, setAdvancedOpenByBlockId] = useState<
     Record<string, boolean>
@@ -120,14 +126,33 @@ export function BlockEditorWorkspace({
   const [toolbarPosition, setToolbarPosition] = useState<FloatingToolbarPosition | null>(
     null,
   );
+  const [dragOverState, setDragOverState] = useState<{
+    blockId: string | null;
+    position: DragPosition | null;
+  }>({ blockId: null, position: null });
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const toolbarContainerRef = useRef<HTMLDivElement | null>(null);
   const railRefByBlockId = useRef<Record<string, HTMLDivElement | null>>({});
   const toolbarOpenScrollTopRef = useRef<number | null>(null);
+  const draggingBlockIdRef = useRef<string | null>(null);
 
   const setRailRef = useCallback((blockId: string, node: HTMLDivElement | null) => {
     railRefByBlockId.current[blockId] = node;
   }, []);
+  const updateDragOverState = useCallback(
+    (blockId: string | null, position: DragPosition | null) => {
+      setDragOverState(previous => {
+        if (previous.blockId === blockId && previous.position === position) {
+          return previous;
+        }
+        return { blockId, position };
+      });
+    },
+    [],
+  );
+  const clearDragOverState = useCallback(() => {
+    updateDragOverState(null, null);
+  }, [updateDragOverState]);
   const closeToolbar = useCallback(() => {
     setToolbarOpenBlockId(null);
     setToolbarPosition(null);
@@ -414,19 +439,23 @@ export function BlockEditorWorkspace({
     setCategoryPickerBlockId(null);
   };
 
-  const moveBlock = (index: number, direction: -1 | 1) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= session.blocks.length) return;
+  const moveBlockToIndex = (fromIndex: number, toIndex: number) => {
+    if (fromIndex < 0 || fromIndex >= session.blocks.length) return;
+    if (fromIndex === toIndex) return;
 
     const reordered = [...session.blocks];
-    const [moving] = reordered.splice(index, 1);
+    const [moving] = reordered.splice(fromIndex, 1);
     if (!moving) return;
-    reordered.splice(targetIndex, 0, moving);
+    const normalizedIndex = Math.min(Math.max(toIndex, 0), reordered.length);
+    reordered.splice(normalizedIndex, 0, moving);
     onChange({
       ...session,
       blocks: reordered,
     });
     setActiveBlockId(moving.block_id);
+  };
+  const moveBlock = (index: number, direction: -1 | 1) => {
+    moveBlockToIndex(index, index + direction);
   };
 
   const commitTitle = (index: number, rawText: string) => {
@@ -467,9 +496,84 @@ export function BlockEditorWorkspace({
       thumbnailUrl: rawText.trim(),
     });
   };
+  const getDragPosition = (
+    event: DragEvent<HTMLElement>,
+    target: HTMLElement,
+  ): DragPosition => {
+    const rect = target.getBoundingClientRect();
+    const offset = event.clientY - rect.top;
+    return offset < rect.height / 2 ? 'before' : 'after';
+  };
+  const handleDragStart = (
+    event: DragEvent<HTMLButtonElement>,
+    blockId: string,
+  ) => {
+    if (disabled) return;
+    event.stopPropagation();
+    setActiveBlockId(blockId);
+    draggingBlockIdRef.current = blockId;
+    clearDragOverState();
+    closeToolbar();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', blockId);
+  };
+  const handleDragEnd = () => {
+    draggingBlockIdRef.current = null;
+    clearDragOverState();
+  };
+  const handleDragOver = (
+    event: DragEvent<HTMLElement>,
+    blockId: string,
+  ) => {
+    if (disabled) return;
+    const draggingBlockId =
+      draggingBlockIdRef.current || event.dataTransfer.getData('text/plain');
+    if (!draggingBlockId || draggingBlockId === blockId) {
+      clearDragOverState();
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    updateDragOverState(blockId, getDragPosition(event, event.currentTarget));
+  };
+  const handleDragLeave = (event: DragEvent<HTMLElement>, blockId: string) => {
+    if (dragOverState.blockId !== blockId) return;
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    clearDragOverState();
+  };
+  const handleDrop = (
+    event: DragEvent<HTMLElement>,
+    blockId: string,
+    targetIndex: number,
+  ) => {
+    if (disabled) return;
+    event.preventDefault();
+    const draggingBlockId =
+      draggingBlockIdRef.current || event.dataTransfer.getData('text/plain');
+    draggingBlockIdRef.current = null;
+    if (!draggingBlockId || draggingBlockId === blockId) {
+      clearDragOverState();
+      return;
+    }
+    const fromIndex = session.blocks.findIndex(
+      block => block.block_id === draggingBlockId,
+    );
+    if (fromIndex < 0) {
+      clearDragOverState();
+      return;
+    }
+    const position = getDragPosition(event, event.currentTarget);
+    let insertIndex = position === 'before' ? targetIndex : targetIndex + 1;
+    if (fromIndex < insertIndex) {
+      insertIndex -= 1;
+    }
+    moveBlockToIndex(fromIndex, insertIndex);
+    clearDragOverState();
+  };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-border-light bg-bg-primary">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-border-light bg-bg-primary">
       <div className="relative border-b border-border-light px-4 pb-4 pt-4">
         {thumbnailUrl ? (
           <div
@@ -594,6 +698,8 @@ export function BlockEditorWorkspace({
               const isHovered = hoveredBlockId === block.block_id;
               const isToolbarOpen = toolbarOpenBlockId === block.block_id;
               const showToolbarTrigger = isActive || isHovered || isToolbarOpen;
+              const showDropIndicator = dragOverState.blockId === block.block_id;
+              const dropIndicatorPosition = dragOverState.position;
 
               return (
                 <Fragment key={`${block.block_id}-${index}`}>
@@ -613,18 +719,29 @@ export function BlockEditorWorkspace({
                         setToolbarOpenBlockId(null);
                       }
                     }}
+                    onDragOver={event => handleDragOver(event, block.block_id)}
+                    onDragLeave={event => handleDragLeave(event, block.block_id)}
+                    onDrop={event => handleDrop(event, block.block_id, index)}
                     className={`relative grid grid-cols-[56px_minmax(0,1fr)] overflow-visible rounded-[14px] border bg-bg-elevated transition ${
                       isActive
                         ? 'border-accent-primary shadow-[0_0_0_2px_rgba(59,130,246,0.14)]'
                         : 'border-border-light'
                     }`}
                   >
+                    {showDropIndicator ? (
+                      <div
+                        className={`pointer-events-none absolute left-4 right-4 z-20 h-0.5 rounded-full bg-accent-primary ${
+                          dropIndicatorPosition === 'before' ? 'top-0' : 'bottom-0'
+                        }`}
+                      />
+                    ) : null}
                     <div
                       ref={node => setRailRef(block.block_id, node)}
                       className={`relative flex flex-col items-center gap-2 rounded-l-[14px] border-r border-border-light px-2 py-3 ${typeMeta.railClassName}`}
                     >
                       <button
                         type="button"
+                        draggable={!disabled}
                         data-block-toolbar-trigger="true"
                         onClick={event => {
                           event.stopPropagation();
@@ -633,14 +750,16 @@ export function BlockEditorWorkspace({
                             previous === block.block_id ? null : block.block_id,
                           );
                         }}
-                        data-tooltip="Open block tools"
+                        onDragStart={event => handleDragStart(event, block.block_id)}
+                        onDragEnd={handleDragEnd}
+                        data-tooltip="Drag to move, click for tools"
                         aria-label={`open block ${index + 1} tools`}
                         className={withTooltip(
                           `absolute -left-3 top-10 inline-flex h-6 w-5 items-center justify-center rounded-[7px] border border-border-light bg-bg-elevated text-text-tertiary shadow-[0_2px_8px_rgba(15,23,42,0.12)] transition ${
                             showToolbarTrigger
                               ? 'opacity-100'
                               : 'pointer-events-none opacity-0'
-                          } hover:text-text-primary`,
+                          } cursor-grab hover:text-text-primary active:cursor-grabbing`,
                           'right',
                         )}
                       >
@@ -985,7 +1104,10 @@ export function BlockEditorWorkspace({
         )}
       </div>
 
-      {typeof document !== 'undefined' && toolbarPosition && toolbarBlockIndex >= 0
+      {!disabled &&
+      typeof document !== 'undefined' &&
+      toolbarPosition &&
+      toolbarBlockIndex >= 0
         ? createPortal(
             <div
               ref={toolbarContainerRef}
@@ -1058,6 +1180,20 @@ export function BlockEditorWorkspace({
         onConfirm={confirmDeleteBlock}
       />
 
+      {disabled ? (
+        <div
+          className="absolute inset-0 z-[80] flex items-center justify-center bg-bg-primary/60 px-6 backdrop-blur-[1px]"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2 rounded-[12px] border border-border-light bg-bg-elevated px-4 py-2 shadow-[0_8px_24px_rgba(45,42,38,0.12)]">
+            <LuLoaderCircle className="h-4 w-4 animate-spin text-accent-primary" />
+            <span className="text-[13px] font-medium text-text-secondary">
+              Saving blocks...
+            </span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

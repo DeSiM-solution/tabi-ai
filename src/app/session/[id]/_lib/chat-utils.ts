@@ -397,18 +397,21 @@ export function toFileSlug(value: string): string {
   return compact || 'travel-guide';
 }
 
-export function buildGoogleMapsCsv(output: UnknownRecord): { csv: string; rowCount: number } | null {
+export type GoogleMapsCsvRow = {
+  name: string;
+  tags: string;
+  description: string;
+  longitude: string;
+  latitude: string;
+};
+
+export function buildGoogleMapsCsv(
+  output: UnknownRecord,
+): { csv: string; rowCount: number; rows: GoogleMapsCsvRow[] } | null {
   const rawBlocks = output.blocks;
   if (!Array.isArray(rawBlocks)) return null;
 
-  const rows: Array<{
-    id: string;
-    name: string;
-    tags: string;
-    description: string;
-    longitude: string;
-    latitude: string;
-  }> = [];
+  const rows: GoogleMapsCsvRow[] = [];
 
   for (const rawBlock of rawBlocks) {
     if (!isRecord(rawBlock)) continue;
@@ -432,7 +435,6 @@ export function buildGoogleMapsCsv(output: UnknownRecord): { csv: string; rowCou
       : '';
 
     rows.push({
-      id: blockId || createBlockId(),
       name: title,
       tags,
       description,
@@ -443,10 +445,9 @@ export function buildGoogleMapsCsv(output: UnknownRecord): { csv: string; rowCou
 
   if (rows.length === 0) return null;
 
-  const header = 'id,name,tags,description,longitude,latitude';
+  const header = 'name,tags,description,longitude,latitude';
   const csvBody = [header, ...rows.map(row =>
     [
-      toCsvCell(row.id),
       toCsvCell(row.name),
       toCsvCell(row.tags),
       toCsvCell(row.description),
@@ -459,6 +460,7 @@ export function buildGoogleMapsCsv(output: UnknownRecord): { csv: string; rowCou
   return {
     csv: `\uFEFF${csvBody}`,
     rowCount: rows.length,
+    rows,
   };
 }
 
@@ -549,6 +551,117 @@ export function getToolStatus(state: ToolPart['state']) {
     label: 'Running',
     tone: 'running' as const,
   };
+}
+
+function toDurationMsValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.round(parsed);
+    }
+  }
+  return null;
+}
+
+function readDurationMsFromRecord(value: unknown): number | null {
+  if (!isRecord(value)) return null;
+  const directDuration =
+    toDurationMsValue(value.durationMs)
+    ?? toDurationMsValue(value.duration_ms)
+    ?? toDurationMsValue(value.elapsedMs)
+    ?? toDurationMsValue(value.elapsed_ms)
+    ?? toDurationMsValue(value.latencyMs)
+    ?? toDurationMsValue(value.latency_ms);
+  if (directDuration !== null) return directDuration;
+
+  const nestedDuration =
+    readDurationMsFromRecord(value.metrics)
+    ?? readDurationMsFromRecord(value.meta);
+  if (nestedDuration !== null) return nestedDuration;
+
+  const startedAt = toTimestampMs(
+    value.startedAt ?? value.started_at ?? value.createdAt ?? value.created_at,
+  );
+  const finishedAt = toTimestampMs(
+    value.finishedAt
+    ?? value.finished_at
+    ?? value.completedAt
+    ?? value.completed_at
+    ?? value.updatedAt
+    ?? value.updated_at,
+  );
+  if (startedAt === null || finishedAt === null || finishedAt < startedAt) return null;
+  return Math.round(finishedAt - startedAt);
+}
+
+function toTimestampMs(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value !== 'string') return null;
+
+  const parsedEpoch = Number(value);
+  if (Number.isFinite(parsedEpoch) && parsedEpoch > 0) {
+    return parsedEpoch;
+  }
+  const parsedDate = Date.parse(value);
+  if (!Number.isNaN(parsedDate) && parsedDate > 0) {
+    return parsedDate;
+  }
+  return null;
+}
+
+export function resolveToolDurationMs(part: ToolPart, output: unknown): number | null {
+  return readDurationMsFromRecord(output) ?? readDurationMsFromRecord(part as unknown);
+}
+
+export function buildToolDurationMapFromSteps(
+  messages: UIMessage[],
+  steps: Array<{
+    toolName?: string;
+    durationMs?: unknown;
+  }> | undefined,
+): Record<string, number> {
+  if (!Array.isArray(steps) || steps.length === 0) return {};
+
+  const sourceKeysByToolName = new Map<string, string[]>();
+  for (const message of messages) {
+    message.parts.forEach((part, partIndex) => {
+      if (!isToolPart(part)) return;
+      const toolName = part.type.replace('tool-', '');
+      const sourceKey = `${message.id}:${partIndex}:${part.type}`;
+      const queue = sourceKeysByToolName.get(toolName);
+      if (queue) {
+        queue.push(sourceKey);
+        return;
+      }
+      sourceKeysByToolName.set(toolName, [sourceKey]);
+    });
+  }
+
+  const consumedCounts = new Map<string, number>();
+  const durationBySourceKey: Record<string, number> = {};
+
+  for (const step of steps) {
+    const toolName = typeof step.toolName === 'string' ? step.toolName : '';
+    if (!toolName) continue;
+    const durationMs = toDurationMsValue(step.durationMs);
+    if (durationMs === null) continue;
+
+    const sourceKeys = sourceKeysByToolName.get(toolName);
+    if (!sourceKeys || sourceKeys.length === 0) continue;
+    const consumedCount = consumedCounts.get(toolName) ?? 0;
+    const sourceKey = sourceKeys[consumedCount];
+    if (!sourceKey) continue;
+
+    durationBySourceKey[sourceKey] = durationMs;
+    consumedCounts.set(toolName, consumedCount + 1);
+  }
+
+  return durationBySourceKey;
 }
 
 function getNumberField(output: unknown, field: string): number | null {
@@ -716,7 +829,10 @@ export function getToolJsonPanel(
 
 export function canEditBlocks(toolName: string, part: ToolPart, output: unknown): boolean {
   if (part.state !== 'output-available') return false;
-  if (toolName !== 'resolve_spot_coordinates') {
+  if (
+    toolName !== 'build_travel_blocks'
+    && toolName !== 'resolve_spot_coordinates'
+  ) {
     return false;
   }
   return isRecord(output) && Array.isArray(output.blocks);
@@ -773,7 +889,7 @@ export function getToolSummary(toolName: string, part: ToolPart, output: unknown
   }
 
   if (toolName === 'generate_handbook_html') {
-    return '';
+    return 'Generated handbook HTML';
   }
 
   return 'Completed';

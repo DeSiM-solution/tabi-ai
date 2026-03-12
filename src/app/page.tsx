@@ -40,6 +40,7 @@ import {
   type SessionContextMenuState,
 } from '@/components/session-context-menu';
 import { SessionSidebar } from '@/components/session-sidebar';
+import { UploadTest } from '@/components/upload-test';
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'youtu.be']);
 const EXAMPLE_VIDEOS = [
@@ -429,6 +430,8 @@ export default function Home() {
                 <p className="text-[13px] font-medium text-status-error">{formError}</p>
               )}
             </form>
+
+            <UploadTest />
           </section>
         </main>
       </div>

@@ -21,6 +21,7 @@ import {
   type HandbookStyleId,
 } from '@/lib/handbook-style';
 import {
+  resolveToolDurationMs,
   canEditBlocks,
   getToolJsonPanel,
   getToolStatus,
@@ -47,6 +48,7 @@ interface ToolCardProps {
   part: ToolPart;
   output: unknown;
   sourceKey: string;
+  durationMs: number | null;
   isRequestBusy: boolean;
   hasRenderableHandbook: boolean;
   onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
@@ -56,6 +58,7 @@ function ToolCard({
   part,
   output,
   sourceKey,
+  durationMs,
   isRequestBusy,
   hasRenderableHandbook,
   onOpenEditor,
@@ -75,6 +78,14 @@ function ToolCard({
     : baseStatus;
   const toolJsonPanel = getToolJsonPanel(toolName, part, output);
   const toolSummary = getToolSummary(toolName, part, output);
+  const summaryWithDuration = (() => {
+    if (durationMs === null) return toolSummary;
+    const durationLabel = `${durationMs}ms`;
+    if (toolSummary.trim()) {
+      return `${toolSummary} (${durationLabel})`;
+    }
+    return `Completed (${durationLabel})`;
+  })();
   const editable = canEditBlocks(toolName, part, output);
   const ToolIcon = TOOL_ICON_BY_NAME[toolName] ?? LuWrench;
 
@@ -110,9 +121,9 @@ function ToolCard({
           {status.label}
         </span>
       </div>
-      {toolSummary ? (
+      {summaryWithDuration ? (
         <p className="mt-2 text-[11px] leading-[1.45] text-text-tertiary">
-          {toolSummary}
+          {summaryWithDuration}
         </p>
       ) : null}
       {toolJsonPanel && (
@@ -142,6 +153,7 @@ function ToolCard({
 interface MessageContentProps {
   message: UIMessage;
   editedToolOutputs: EditedOutputs;
+  toolDurations: Record<string, number>;
   handbookStyle: HandbookStyleId | null;
   isRequestBusy: boolean;
   hasRenderableHandbook: boolean;
@@ -191,6 +203,7 @@ function resolveMessageHandbookStyle(
 export function MessageContent({
   message,
   editedToolOutputs,
+  toolDurations,
   handbookStyle,
   isRequestBusy,
   hasRenderableHandbook,
@@ -238,12 +251,16 @@ export function MessageContent({
         if (isToolPart(part)) {
           const sourceKey = `${message.id}:${i}:${part.type}`;
           const output = editedToolOutputs[sourceKey] ?? part.output;
+          const resolvedDurationMs =
+            toolDurations[sourceKey]
+            ?? resolveToolDurationMs(part, output);
           return (
             <ToolCard
               key={`${message.id}-${i}`}
               part={part}
               output={output}
               sourceKey={sourceKey}
+              durationMs={resolvedDurationMs ?? null}
               isRequestBusy={isRequestBusy}
               hasRenderableHandbook={hasRenderableHandbook}
               onOpenEditor={onOpenEditor}

@@ -428,14 +428,72 @@ const useHandbooksZustandStore = create<HandbooksStoreState>((set, get) => ({
 
   async setActiveHandbook(sessionId, handbookId) {
     if (!sessionId || !handbookId) return false;
-    const response = await fetch(`/api/sessions/${sessionId}/handbooks/${handbookId}/activate`, {
-      method: 'POST',
+    const previousActiveHandbookId =
+      get().bySessionId[sessionId]?.activeHandbookId ?? null;
+    set(state => {
+      const current = state.bySessionId[sessionId] ?? createEmptySessionHandbooks(sessionId);
+      return {
+        ...state,
+        bySessionId: {
+          ...state.bySessionId,
+          [sessionId]: {
+            ...current,
+            activeHandbookId: resolveActiveHandbookId(handbookId, current.handbooks),
+            error: null,
+          },
+        },
+      };
     });
-    if (!response.ok) {
-      throw new Error(`Failed to activate handbook (${response.status})`);
+    const optimisticSnapshot = get().bySessionId[sessionId];
+    if (optimisticSnapshot) {
+      syncSessionSummaryFromHandbooks(
+        sessionId,
+        optimisticSnapshot.activeHandbookId,
+        optimisticSnapshot.handbooks,
+      );
+    }
+    try {
+      const response = await fetch(
+        `/api/sessions/${sessionId}/handbooks/${handbookId}/activate`,
+        {
+          method: 'POST',
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to activate handbook (${response.status})`);
+      }
+    } catch (error) {
+      set(state => {
+        const current = state.bySessionId[sessionId] ?? createEmptySessionHandbooks(sessionId);
+        if (current.activeHandbookId !== handbookId) return state;
+        return {
+          ...state,
+          bySessionId: {
+            ...state.bySessionId,
+            [sessionId]: {
+              ...current,
+              activeHandbookId: resolveActiveHandbookId(
+                previousActiveHandbookId,
+                current.handbooks,
+              ),
+              error: error instanceof Error ? error.message : String(error),
+            },
+          },
+        };
+      });
+      const snapshot = get().bySessionId[sessionId];
+      if (snapshot) {
+        syncSessionSummaryFromHandbooks(
+          sessionId,
+          snapshot.activeHandbookId,
+          snapshot.handbooks,
+        );
+      }
+      throw error;
     }
     set(state => {
       const current = state.bySessionId[sessionId] ?? createEmptySessionHandbooks(sessionId);
+      if (current.activeHandbookId !== handbookId) return state;
       return {
         ...state,
         bySessionId: {

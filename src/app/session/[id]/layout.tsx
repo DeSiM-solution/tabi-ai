@@ -78,6 +78,7 @@ export default function SessionDetailLayout({
     handbookHtml,
     handbookPreviewUrl,
     previewDevice,
+    isSavingBlocks,
   } =
     useSessionEditorSnapshot(activeSessionId);
   const activeSessionHandbooksState = useSessionHandbooksState(activeSessionId);
@@ -797,7 +798,7 @@ export default function SessionDetailLayout({
                           showToolbarTooltip('Export Google Map CSV', event)
                         }
                         onBlur={hideToolbarTooltip}
-                        disabled={!hasBlocks}
+                        disabled={!hasBlocks || isSavingBlocks}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Export Google Map CSV"
                       >
@@ -810,7 +811,7 @@ export default function SessionDetailLayout({
                         onMouseLeave={hideToolbarTooltip}
                         onFocus={event => showToolbarTooltip('Save Block Data', event)}
                         onBlur={hideToolbarTooltip}
-                        disabled={!hasBlocks}
+                        disabled={!hasBlocks || isSavingBlocks}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] bg-accent-primary-bg text-accent-primary transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Save Block Data"
                       >
@@ -823,7 +824,7 @@ export default function SessionDetailLayout({
                         onMouseLeave={hideToolbarTooltip}
                         onFocus={event => showToolbarTooltip('Remix Handbook', event)}
                         onBlur={hideToolbarTooltip}
-                        disabled={!hasBlocks || isProcessBusy}
+                        disabled={!hasBlocks || isProcessBusy || isSavingBlocks}
                         className="inline-flex h-10 items-center gap-1.5 rounded-[10px] bg-accent-primary px-3.5 text-[13px] font-medium text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
                         aria-label="Remix Handbook"
                       >

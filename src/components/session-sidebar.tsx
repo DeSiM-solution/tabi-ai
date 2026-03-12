@@ -144,10 +144,10 @@ export function SessionSidebar({
                   handbookCount > 0
                     ? `${handbookCount} handbook${handbookCount > 1 ? 's' : ''}`
                     : '0 handbook';
-                const rowClassName = `flex gap-3 rounded-[8px] px-3 py-3 transition ${
+                const rowClassName = `flex min-h-[64px] items-stretch gap-3 rounded-[8px] px-3 py-3 transition ${
                   isActive ? 'bg-accent-primary-bg' : 'hover:bg-bg-secondary'
                 }`;
-                const iconClassName = `mt-0.5 h-[18px] w-[18px] shrink-0 ${
+                const iconClassName = `h-[18px] w-[18px] shrink-0 self-center ${
                   isActive ? 'text-accent-primary' : 'text-text-tertiary'
                 }`;
 
@@ -207,16 +207,16 @@ export function SessionSidebar({
                         className={rowClassName}
                       >
                         <LuFileText className={iconClassName} />
-                        <div className="min-w-0">
+                        <div className="flex min-w-0 flex-1 flex-col justify-between">
                           <p
-                            className={`truncate text-[13px] font-medium leading-4 ${
+                            className={`truncate text-[12px] font-medium leading-4 ${
                               isActive ? 'text-text-primary' : 'text-text-secondary'
                             }`}
                           >
                             {session.title}
                           </p>
                           <p
-                            className={`mt-1 text-[11px] leading-4 ${
+                            className={`mt-auto pt-1 text-[11px] leading-4 ${
                               session.isError ? 'text-status-error' : 'text-text-tertiary'
                             }`}
                           >

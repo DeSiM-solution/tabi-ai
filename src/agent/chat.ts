@@ -1,5 +1,6 @@
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 'ai';
 import { resolveModelTask } from '@/lib/model-management';
+import { normalizeHandbookStyle } from '@/lib/handbook-style';
 import {
   markSessionCancelled,
   markSessionCompleted,
@@ -129,11 +130,13 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   let payload: {
     messages?: UIMessage[];
     sessionId?: string;
+    handbookStyle?: unknown;
   };
   try {
     payload = (await req.json()) as {
       messages?: UIMessage[];
       sessionId?: string;
+      handbookStyle?: unknown;
     };
   } catch (error) {
     console.error('[chat_api] invalid-request-json', {
@@ -151,6 +154,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     typeof payload.sessionId === 'string' && payload.sessionId.trim()
       ? payload.sessionId.trim()
       : null;
+  const requestedHandbookStyle = normalizeHandbookStyle(payload.handbookStyle);
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const latestUserText =
     messages
@@ -166,6 +170,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     requestId,
     userId,
     sessionId,
+    requestedHandbookStyle,
     messageCount: messages.length,
     removedToolParts: sanitizedInput.removedToolParts,
     removedMessages: sanitizedInput.removedMessages,
@@ -225,6 +230,9 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
 
   if (sessionId) {
     await hydrateRuntimeState(sessionId, userId, runtime);
+  }
+  if (requestedHandbookStyle) {
+    runtime.latestHandbookStyle = requestedHandbookStyle;
   }
 
   const runToolStep = createRunToolStep({ sessionId, userId, runtime });
