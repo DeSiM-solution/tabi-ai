@@ -8,12 +8,12 @@ import {
   LuArchive,
   LuChevronDown,
   LuCode,
-  LuDownload,
   LuExternalLink,
   LuFileText,
   LuFilePenLine,
   LuGlobe,
   LuLoader,
+  LuMap,
   LuMonitor,
   LuPencil,
   LuRefreshCw,
@@ -802,7 +802,7 @@ export default function SessionDetailLayout({
                         className="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Export Google Map CSV"
                       >
-                        <LuDownload className="h-4 w-4" />
+                        <LuMap className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
