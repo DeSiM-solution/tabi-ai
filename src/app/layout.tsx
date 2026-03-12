@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   Dancing_Script,
   Inter,
@@ -59,7 +60,9 @@ export default function RootLayout({
         className={`${inter.variable} ${jetBrainsMono.variable} ${notoSansJp.variable} ${playfairDisplay.variable} ${dancingScript.variable} antialiased`}
       >
         {children}
-        <UtmTracker />
+        <Suspense fallback={null}>
+          <UtmTracker />
+        </Suspense>
         <Toaster position="bottom-right" richColors />
       </body>
     </html>
