@@ -4,6 +4,7 @@ import { runStructuredTask } from '@/lib/model-management';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, toErrorMessage } from '@/agent/context/utils';
 import { handbookSearchImagePlanPrompt } from '@/agent/prompts/image-query-planning';
+import { normalizeHandbookImagesToStorage } from '@/server/handbook-image-storage';
 import {
   handbookImageAssetSchema,
   handbookImagePlanSchema,
@@ -316,18 +317,37 @@ export function createSearchImageTool(ctx: AgentToolContext) {
           return image ? [image] : [];
         });
 
-        ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(finalImages);
+        const storageNormalization = await normalizeHandbookImagesToStorage({
+          images: handbookImageAssetSchema.array().parse(finalImages),
+          sessionId: ctx.sessionId,
+          handbookId: null,
+          storageSegment: 'search-image',
+          failureMode: 'drop-failed',
+        });
+        const normalizedImages = handbookImageAssetSchema.array().parse(
+          storageNormalization.images,
+        );
+        if (normalizedImages.length === 0) {
+          throw new Error(
+            'All search_image results failed to upload to storage. No usable handbook images remain.',
+          );
+        }
+
+        ctx.runtime.latestHandbookImages = normalizedImages;
         ctx.runtime.latestImageMode = 'search_image';
-        const fallbackGeneratedCount = finalImages.filter(
+        const normalizedImageByBlockId = new Map(
+          normalizedImages.map(image => [image.block_id, image]),
+        );
+        const fallbackGeneratedCount = normalizedImages.filter(
           image => image.source === 'imagen',
         ).length;
-        const unsplashMatchedCount = finalImages.filter(
+        const unsplashMatchedCount = normalizedImages.filter(
           image => image.source === 'unsplash',
         ).length;
         const plannerCoverageRatio =
           targetBlocks.length === 0 ? 1 : Number((plan.images.length / targetBlocks.length).toFixed(4));
         const matchedTargetCount = targetBlocks.filter(block =>
-          imageByBlockId.has(block.block_id),
+          normalizedImageByBlockId.has(block.block_id),
         ).length;
         const coverageMetrics = computeImageCoverageMetrics(
           targetBlocks.length,
@@ -335,7 +355,7 @@ export function createSearchImageTool(ctx: AgentToolContext) {
         );
         const fullCoverageMetrics = computeImageCoverageMetrics(
           sourceBlocks.length,
-          finalImages.length,
+          normalizedImages.length,
         );
         const imageRefs = ctx.runtime.latestHandbookImages.map(image => ({
           block_id: image.block_id,
@@ -356,12 +376,16 @@ export function createSearchImageTool(ctx: AgentToolContext) {
           coverage_gate_triggered: coverageGateTriggered,
           coverage_backfill_gap: coverageGap,
           coverage_backfill_added_count: backfillAddedCount,
+          storage_uploaded_count: storageNormalization.uploadedCount,
+          storage_reused_count: storageNormalization.reusedCount,
+          storage_skipped_count: storageNormalization.skippedCount,
+          storage_failure_count: storageNormalization.failures.length,
           full_block_count: sourceBlocks.length,
           full_required_image_count: fullCoverageMetrics.required_image_count,
-          full_matched_image_count: finalImages.length,
+          full_matched_image_count: normalizedImages.length,
           full_coverage_ratio: fullCoverageMetrics.coverage_ratio,
           full_pass_75:
-            finalImages.length >= fullCoverageMetrics.required_image_count,
+            normalizedImages.length >= fullCoverageMetrics.required_image_count,
           ...coverageMetrics,
           block_attempts: blockAttempts,
           image_refs: imageRefs,
@@ -375,6 +399,10 @@ export function createSearchImageTool(ctx: AgentToolContext) {
           coverageGateTriggered,
           coverageBackfillGap: coverageGap,
           coverageBackfillAddedCount: backfillAddedCount,
+          storageUploadedCount: storageNormalization.uploadedCount,
+          storageReusedCount: storageNormalization.reusedCount,
+          storageSkippedCount: storageNormalization.skippedCount,
+          storageFailureCount: storageNormalization.failures.length,
           targetBlockCount: coverageMetrics.target_block_count,
           requiredImageCount: coverageMetrics.required_image_count,
           coverageRatio: coverageMetrics.coverage_ratio,

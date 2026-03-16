@@ -323,6 +323,28 @@ function collectHtmlCandidateSrcs(html, helpers) {
   return [...candidates];
 }
 
+function collectHtmlCandidateCssUrls(html, helpers) {
+  if (typeof html !== 'string' || !html) return [];
+  const regex = /url\(\s*(?:'([^']*)'|"([^"]*)"|([^'")\s][^)]*))\s*\)/gi;
+  const candidates = new Set();
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    const src = match[1] ?? match[2] ?? match[3] ?? '';
+    if (shouldReplaceHtmlUrl(src, helpers)) {
+      candidates.add(src.trim());
+    }
+  }
+  return [...candidates];
+}
+
+function collectHtmlCandidateUrls(html, helpers) {
+  const candidates = new Set([
+    ...collectHtmlCandidateSrcs(html, helpers),
+    ...collectHtmlCandidateCssUrls(html, helpers),
+  ]);
+  return [...candidates];
+}
+
 function replaceHtmlWithMappedUrls(html, helpers, mapping) {
   if (!mapping || mapping.size === 0) {
     return {
@@ -332,15 +354,27 @@ function replaceHtmlWithMappedUrls(html, helpers, mapping) {
     };
   }
 
-  const regex = /<img\b[^>]*\bsrc=(['"])(.*?)\1/gi;
   let replacedCount = 0;
-  const nextHtml = html.replace(regex, (full, quote, src) => {
+  const imgRegex = /<img\b[^>]*\bsrc=(['"])(.*?)\1/gi;
+  let nextHtml = html.replace(imgRegex, (full, quote, src) => {
     if (!shouldReplaceHtmlUrl(src, helpers)) return full;
     const normalizedSrc = String(src).trim();
     const nextSrc = mapping.get(normalizedSrc);
     if (!nextSrc || nextSrc === normalizedSrc) return full;
     replacedCount += 1;
     return full.replace(src, nextSrc);
+  });
+  const cssUrlRegex = /url\(\s*(?:'([^']*)'|"([^"]*)"|([^'")\s][^)]*))\s*\)/gi;
+  nextHtml = nextHtml.replace(cssUrlRegex, (full, singleQuoted, doubleQuoted, bare) => {
+    const src = singleQuoted ?? doubleQuoted ?? bare ?? '';
+    if (!shouldReplaceHtmlUrl(src, helpers)) return full;
+    const normalizedSrc = String(src).trim();
+    const nextSrc = mapping.get(normalizedSrc);
+    if (!nextSrc || nextSrc === normalizedSrc) return full;
+    replacedCount += 1;
+    if (singleQuoted !== undefined) return `url('${nextSrc}')`;
+    if (doubleQuoted !== undefined) return `url("${nextSrc}")`;
+    return `url(${nextSrc})`;
   });
 
   return {
@@ -645,7 +679,7 @@ async function main() {
           const jsonCandidates =
             countJsonCandidates(handbook.sourceContext, helpers)
             + countJsonCandidates(handbook.sourceToolOutputs, helpers);
-          const htmlCandidates = collectHtmlCandidateSrcs(handbook.html, helpers).length;
+          const htmlCandidates = collectHtmlCandidateUrls(handbook.html, helpers).length;
 
           stats.candidateUrlsFound += jsonCandidates + htmlCandidates;
           if (jsonCandidates > 0) {
@@ -677,7 +711,7 @@ async function main() {
             }),
         );
 
-        const htmlCandidates = collectHtmlCandidateSrcs(handbook.html, helpers);
+        const htmlCandidates = collectHtmlCandidateUrls(handbook.html, helpers);
         const htmlUrlMapping = new Map();
         for (const src of htmlCandidates) {
           const nextUrl = await resolveStorageUrl(src, {

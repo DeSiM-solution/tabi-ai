@@ -30,7 +30,7 @@ type MaterializedImage = {
   extension: string;
 };
 
-export type UploadFailureMode = 'fail-fast' | 'skip-failed';
+export type UploadFailureMode = 'drop-failed' | 'fail-fast' | 'skip-failed';
 
 export type NormalizeHandbookImagesResult = {
   images: HandbookImageAsset[];
@@ -55,9 +55,15 @@ function sanitizePathSegment(input: string | null | undefined): string {
     .slice(0, 120) || FALLBACK_RUNTIME_SEGMENT;
 }
 
-function getRuntimeSegment(handbookId: string | null | undefined): string {
-  const raw = (handbookId ?? '').trim();
-  if (raw) return sanitizePathSegment(raw);
+function getStorageSegment(input: {
+  handbookId: string | null | undefined;
+  storageSegment?: string | null | undefined;
+}): string {
+  const explicitSegment = (input.storageSegment ?? '').trim();
+  if (explicitSegment) return sanitizePathSegment(explicitSegment);
+
+  const handbookId = (input.handbookId ?? '').trim();
+  if (handbookId) return sanitizePathSegment(handbookId);
   return `runtime-${Date.now()}`;
 }
 
@@ -212,12 +218,16 @@ export async function normalizeHandbookImagesToStorage(input: {
   images: HandbookImageAsset[];
   sessionId: string | null | undefined;
   handbookId: string | null | undefined;
+  storageSegment?: string | null | undefined;
   failureMode?: UploadFailureMode;
 }): Promise<NormalizeHandbookImagesResult> {
   const failureMode = input.failureMode ?? 'skip-failed';
   const rewrittenImages: HandbookImageAsset[] = [];
   const sourceUrlMap = new Map<string, string>();
-  const runtimeSegment = getRuntimeSegment(input.handbookId);
+  const runtimeSegment = getStorageSegment({
+    handbookId: input.handbookId,
+    storageSegment: input.storageSegment,
+  });
   let uploadedCount = 0;
   let reusedCount = 0;
   let skippedCount = 0;
@@ -230,6 +240,9 @@ export async function normalizeHandbookImagesToStorage(input: {
       if (failureMode === 'fail-fast') throw new Error(message);
       skippedCount += 1;
       failures.push({ blockId: image.block_id, message });
+      if (failureMode !== 'drop-failed') {
+        rewrittenImages.push(image);
+      }
       continue;
     }
 
@@ -280,7 +293,9 @@ export async function normalizeHandbookImagesToStorage(input: {
       }
       failures.push({ blockId: image.block_id, message });
       skippedCount += 1;
-      rewrittenImages.push(image);
+      if (failureMode !== 'drop-failed') {
+        rewrittenImages.push(image);
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import { runStructuredTask } from '@/lib/model-management';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs } from '@/agent/context/utils';
 import { handbookGenerateImagePlanPrompt } from '@/agent/prompts/image-query-planning';
+import { normalizeHandbookImagesToStorage } from '@/server/handbook-image-storage';
 import { handbookImageAssetSchema, handbookImagePlanSchema, MAX_HANDBOOK_IMAGES } from './types';
 import {
   computeImageCoverageMetrics,
@@ -79,15 +80,31 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           }),
         );
 
-        ctx.runtime.latestHandbookImages = handbookImageAssetSchema.array().parse(images);
+        const storageNormalization = await normalizeHandbookImagesToStorage({
+          images: handbookImageAssetSchema.array().parse(images),
+          sessionId: ctx.sessionId,
+          handbookId: null,
+          storageSegment: 'generate-image',
+          failureMode: 'drop-failed',
+        });
+        const normalizedImages = handbookImageAssetSchema.array().parse(
+          storageNormalization.images,
+        );
+        if (normalizedImages.length === 0) {
+          throw new Error(
+            'All generate_image results failed to upload to storage. No usable handbook images remain.',
+          );
+        }
+
+        ctx.runtime.latestHandbookImages = normalizedImages;
         ctx.runtime.latestImageMode = 'generate_image';
         const coverageMetrics = computeImageCoverageMetrics(
           targetBlocks.length,
-          ctx.runtime.latestHandbookImages.length,
+          normalizedImages.length,
         );
         const fullCoverageMetrics = computeImageCoverageMetrics(
           sourceBlocks.length,
-          ctx.runtime.latestHandbookImages.length,
+          normalizedImages.length,
         );
 
         const imageRefs = ctx.runtime.latestHandbookImages.map(image => ({
@@ -102,13 +119,17 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           mode: 'generate_image' as const,
           planner_model: plannerModel,
           generation_models: [...imageModelsUsed],
-          image_count: ctx.runtime.latestHandbookImages.length,
+          image_count: normalizedImages.length,
+          storage_uploaded_count: storageNormalization.uploadedCount,
+          storage_reused_count: storageNormalization.reusedCount,
+          storage_skipped_count: storageNormalization.skippedCount,
+          storage_failure_count: storageNormalization.failures.length,
           full_block_count: sourceBlocks.length,
           full_required_image_count: fullCoverageMetrics.required_image_count,
-          full_matched_image_count: ctx.runtime.latestHandbookImages.length,
+          full_matched_image_count: normalizedImages.length,
           full_coverage_ratio: fullCoverageMetrics.coverage_ratio,
           full_pass_75:
-            ctx.runtime.latestHandbookImages.length >=
+            normalizedImages.length >=
             fullCoverageMetrics.required_image_count,
           ...coverageMetrics,
           image_refs: imageRefs,
@@ -123,6 +144,10 @@ export function createGenerateImageTool(ctx: AgentToolContext) {
           fullBlockCount: fullCoverageMetrics.target_block_count,
           fullRequiredImageCount: fullCoverageMetrics.required_image_count,
           fullCoverageRatio: fullCoverageMetrics.coverage_ratio,
+          storageUploadedCount: storageNormalization.uploadedCount,
+          storageReusedCount: storageNormalization.reusedCount,
+          storageSkippedCount: storageNormalization.skippedCount,
+          storageFailureCount: storageNormalization.failures.length,
           plannerModel,
           generationModels: [...imageModelsUsed],
         });

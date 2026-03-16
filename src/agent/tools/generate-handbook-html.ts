@@ -131,6 +131,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           );
         }
 
+        // Defensive fallback: new image tool outputs should already be canonical Supabase URLs.
         const storageNormalization = await normalizeHandbookImagesToStorage({
           images: preparedImages,
           sessionId: ctx.sessionId,

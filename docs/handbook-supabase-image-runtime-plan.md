@@ -1,5 +1,7 @@
 # 新生成 Handbook 图片落盘 Supabase 方案（运行时）
 
+> 更新（2026-03-16）：canonical URL 入口已前移到 `search_image` / `generate_image`。本文件中的 `generate_handbook_html` 上传闸口仍保留，但现在主要作为历史数据和异常输入的兜底保护。
+
 ## 0. Review / 执行勾选清单
 
 > 用法：确认一项完成后，把 `- [ ]` 改成 `- [x]`。
