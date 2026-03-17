@@ -18617,7 +18617,8 @@
                                   "fill": "#111827",
                                   "content": "+",
                                   "fontFamily": "Inter",
-                                  "fontSize": 24
+                                  "fontSize": 24,
+                                  "fontWeight": "normal"
                                 },
                                 {
                                   "type": "icon_font",
@@ -21214,7 +21215,8 @@
                       "fill": "#9CA3AF",
                       "content": "Search...",
                       "fontFamily": "Inter",
-                      "fontSize": 14
+                      "fontSize": 14,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
