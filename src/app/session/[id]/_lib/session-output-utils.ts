@@ -3,6 +3,10 @@ import {
   extractContextHandbookImages,
   mergeImagesIntoOutputIfMissing,
 } from './handbook-image-utils';
+import {
+  LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+  SESSION_ANALYSIS_TOOL_NAME,
+} from '@/lib/session-analysis-tool';
 
 function readNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -30,7 +34,8 @@ export function extractSessionTitleFromToolOutput(
     ?? readNonEmptyString(output.guide_title);
 
   if (
-    toolName === 'build_travel_blocks'
+    toolName === SESSION_ANALYSIS_TOOL_NAME
+    || toolName === LEGACY_SESSION_ANALYSIS_TOOL_NAME
     || toolName === 'resolve_spot_coordinates'
     || toolName === 'generate_handbook_html'
   ) {
@@ -105,15 +110,17 @@ export function toPersistedBlocksOutput(
     };
   }
 
-  const preferredBuildOutput = persistedToolOutputs?.build_travel_blocks;
+  const preferredBuildOutput =
+    persistedToolOutputs?.[SESSION_ANALYSIS_TOOL_NAME]
+    ?? persistedToolOutputs?.[LEGACY_SESSION_ANALYSIS_TOOL_NAME];
   if (
     isRecord(preferredBuildOutput)
     && Array.isArray(preferredBuildOutput.blocks)
     && preferredBuildOutput.blocks.length > 0
   ) {
     return {
-      sourceKey: 'persisted:build_travel_blocks',
-      toolName: 'build_travel_blocks',
+      sourceKey: `persisted:${SESSION_ANALYSIS_TOOL_NAME}`,
+      toolName: SESSION_ANALYSIS_TOOL_NAME,
       output: withContextVideoMeta(preferredBuildOutput),
     };
   }

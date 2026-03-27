@@ -1,10 +1,18 @@
+import {
+  HANDBOOK_REMIX_PROMPT_PREFIX,
+  LEGACY_HANDBOOK_REGEN_PROMPT_PREFIX,
+} from '@/lib/handbook-remix';
+
 export const PERSISTABLE_BLOCK_TOOL_NAMES = new Set([
+  'analyze_session_data',
   'build_travel_blocks',
   'resolve_spot_coordinates',
 ]);
 
-export const MANUAL_HANDBOOK_PROMPT_PREFIX =
-  'Generate handbook HTML from edited blocks.';
+export const MANUAL_HANDBOOK_PROMPT_PREFIX = HANDBOOK_REMIX_PROMPT_PREFIX;
+
+export const LEGACY_MANUAL_HANDBOOK_PROMPT_PREFIX =
+  LEGACY_HANDBOOK_REGEN_PROMPT_PREFIX;
 
 export const LEGACY_HANDBOOK_INPUT_JSON_MARKER = 'HANDBOOK_INPUT_JSON:';
 

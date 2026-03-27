@@ -13,7 +13,7 @@ export function buildAgentTools(ctx: AgentToolContext) {
     parse_youtube_input: createParseYoutubeInputTool(ctx),
     crawl_youtube_videos: createCrawlYoutubeVideosTool(ctx),
     summarize_description: createSummarizeSessionDescriptionTool(ctx),
-    build_travel_blocks: createBuildTravelBlocksTool(ctx),
+    analyze_session_data: createBuildTravelBlocksTool(ctx),
     resolve_spot_coordinates: createResolveSpotCoordinatesTool(ctx),
     search_image: createSearchImageTool(ctx),
     generate_image: createGenerateImageTool(ctx),

@@ -3,6 +3,7 @@ import type { UIMessage } from 'ai';
 
 import type { HandbookStyleId } from '@/lib/handbook-style';
 import { handbooksActions } from '@/stores/handbooks-store';
+import { normalizeSessionAnalysisToolName } from '@/lib/session-analysis-tool';
 
 import {
   buildToolDurationMapFromSteps,
@@ -38,10 +39,8 @@ function toMessageBlocksOutput(
       if (part.state !== 'output-available') continue;
 
       const toolName = part.type.replace('tool-', '');
-      if (
-        toolName !== 'resolve_spot_coordinates'
-        && toolName !== 'build_travel_blocks'
-      ) {
+      const normalizedSessionAnalysisToolName = normalizeSessionAnalysisToolName(toolName);
+      if (toolName !== 'resolve_spot_coordinates' && !normalizedSessionAnalysisToolName) {
         continue;
       }
       if (!isRecord(part.output) || !Array.isArray(part.output.blocks)) continue;
@@ -49,7 +48,7 @@ function toMessageBlocksOutput(
 
       return {
         sourceKey: `persisted:${message.id}:${partIndex}:${part.type}`,
-        toolName,
+        toolName: normalizedSessionAnalysisToolName ?? toolName,
         output: part.output as UnknownRecord,
       };
     }
@@ -66,10 +65,8 @@ function toStepBlocksOutput(
     if (!isRecord(step)) continue;
 
     const toolName = typeof step.toolName === 'string' ? step.toolName : '';
-    if (
-      toolName !== 'resolve_spot_coordinates'
-      && toolName !== 'build_travel_blocks'
-    ) {
+    const normalizedSessionAnalysisToolName = normalizeSessionAnalysisToolName(toolName);
+    if (toolName !== 'resolve_spot_coordinates' && !normalizedSessionAnalysisToolName) {
       continue;
     }
     if (!isRecord(step.output) || !Array.isArray(step.output.blocks)) continue;
@@ -78,7 +75,7 @@ function toStepBlocksOutput(
     const stepId = typeof step.id === 'string' && step.id.trim() ? step.id : `${index}`;
     return {
       sourceKey: `persisted-step:${stepId}:${toolName}`,
-      toolName,
+      toolName: normalizedSessionAnalysisToolName ?? toolName,
       output: step.output as UnknownRecord,
     };
   }
@@ -202,7 +199,7 @@ export function useSessionHydration({
           if (restoredEditorSession && restoredEditorSession.blocks.length > 0) {
             sessionEditorActions.setEditorSession(sessionId, restoredEditorSession);
             if (resolvedHandbooks.length === 0) {
-              sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
+              sessionEditorActions.setCenterViewMode(sessionId, 'html');
             }
           }
         }

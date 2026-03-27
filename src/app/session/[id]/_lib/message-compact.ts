@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai';
+import { isHandbookRemixPromptText } from '@/lib/handbook-remix';
 
 import {
   LEGACY_HANDBOOK_INPUT_JSON_MARKER,
@@ -17,7 +18,7 @@ export function compactChatMessagesForChatApi(
       const raw = part.text;
       const trimmed = raw.trim();
       if (
-        trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX)
+        isHandbookRemixPromptText(trimmed)
         && trimmed.includes(LEGACY_HANDBOOK_INPUT_JSON_MARKER)
       ) {
         changed = true;

@@ -257,6 +257,7 @@ export type HandbookImageAsset = z.infer<typeof handbookImageAssetSchema>;
 export type PersistedToolName =
   | 'parse_youtube_input'
   | 'crawl_youtube_videos'
+  | 'analyze_session_data'
   | 'build_travel_blocks'
   | 'resolve_spot_coordinates'
   | 'search_image'

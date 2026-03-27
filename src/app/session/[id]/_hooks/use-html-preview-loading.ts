@@ -15,9 +15,13 @@ export function useHtmlPreviewLoading({
   handbookPreviewUrl,
   handbookHtml,
 }: UseHtmlPreviewLoadingArgs) {
-  const [htmlPreviewLoadPhase, setHtmlPreviewLoadPhase] =
-    useState<HtmlPreviewLoadPhase>('idle');
+  const [loadedPreviewKey, setLoadedPreviewKey] = useState<string | null>(null);
+  const [isRevealingPreview, setIsRevealingPreview] = useState(false);
   const htmlPreviewRevealTimerRef = useRef<number | null>(null);
+  const activePreviewKey =
+    !isSessionHydrating && centerViewMode === 'html'
+      ? handbookPreviewUrl ?? handbookHtml ?? null
+      : null;
 
   const clearHtmlPreviewRevealTimer = useCallback(() => {
     if (htmlPreviewRevealTimerRef.current !== null) {
@@ -27,25 +31,14 @@ export function useHtmlPreviewLoading({
   }, []);
 
   useEffect(() => {
-    if (isSessionHydrating || centerViewMode !== 'html') {
+    if (!activePreviewKey) {
       clearHtmlPreviewRevealTimer();
-      setHtmlPreviewLoadPhase('idle');
-      return;
     }
-    if (!handbookPreviewUrl && !handbookHtml) {
-      clearHtmlPreviewRevealTimer();
-      setHtmlPreviewLoadPhase('idle');
-      return;
-    }
+  }, [activePreviewKey, clearHtmlPreviewRevealTimer]);
+
+  useEffect(() => {
     clearHtmlPreviewRevealTimer();
-    setHtmlPreviewLoadPhase('loading');
-  }, [
-    centerViewMode,
-    clearHtmlPreviewRevealTimer,
-    handbookHtml,
-    handbookPreviewUrl,
-    isSessionHydrating,
-  ]);
+  }, [clearHtmlPreviewRevealTimer, activePreviewKey]);
 
   useEffect(
     () => () => {
@@ -54,31 +47,33 @@ export function useHtmlPreviewLoading({
     [clearHtmlPreviewRevealTimer],
   );
 
-  useEffect(() => {
-    if (htmlPreviewLoadPhase !== 'revealing') return;
+  const handleHtmlPreviewLoad = useCallback(() => {
+    if (!activePreviewKey) return;
+
     clearHtmlPreviewRevealTimer();
+    setLoadedPreviewKey(activePreviewKey);
+    setIsRevealingPreview(true);
     htmlPreviewRevealTimerRef.current = window.setTimeout(() => {
-      setHtmlPreviewLoadPhase('idle');
+      setIsRevealingPreview(false);
       htmlPreviewRevealTimerRef.current = null;
     }, 520);
-    return () => {
-      clearHtmlPreviewRevealTimer();
-    };
-  }, [clearHtmlPreviewRevealTimer, htmlPreviewLoadPhase]);
-
-  const handleHtmlPreviewLoad = useCallback(() => {
-    setHtmlPreviewLoadPhase(previous => {
-      if (previous === 'idle') return previous;
-      return 'revealing';
-    });
-  }, []);
+  }, [activePreviewKey, clearHtmlPreviewRevealTimer]);
 
   const resetHtmlPreviewLoadPhase = useCallback(() => {
     clearHtmlPreviewRevealTimer();
-    setHtmlPreviewLoadPhase('idle');
-  }, [clearHtmlPreviewRevealTimer]);
+    setLoadedPreviewKey(activePreviewKey);
+    setIsRevealingPreview(false);
+  }, [activePreviewKey, clearHtmlPreviewRevealTimer]);
 
-  const hasHtmlPreviewSource = Boolean(handbookPreviewUrl || handbookHtml);
+  const htmlPreviewLoadPhase: HtmlPreviewLoadPhase =
+    !activePreviewKey
+      ? 'idle'
+      : loadedPreviewKey !== activePreviewKey
+        ? 'loading'
+        : isRevealingPreview
+          ? 'revealing'
+          : 'idle';
+  const hasHtmlPreviewSource = Boolean(activePreviewKey);
   const showHtmlPreviewOverlay =
     hasHtmlPreviewSource &&
     (htmlPreviewLoadPhase === 'loading' || htmlPreviewLoadPhase === 'revealing');

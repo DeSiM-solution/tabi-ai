@@ -1,6 +1,6 @@
-# 进程管理（多 Handbook 版本）
+# 进程管理（多 Handbook / Generation / Remix）
 
-本文面向接手项目同学，描述当前 Travel Guide Agent 的端到端进程管理：前端状态、后端编排、数据库落库、恢复机制、运维操作。
+本文面向接手项目同学，描述当前 Travel Guide Agent 的端到端进程管理：前端状态、后端编排、数据库落库、恢复机制、运维操作。当前 2.0 的最小落地策略是：不改 Prisma schema，继续保留 `SessionState` 作为兼容缓存，但真正的生成主数据已经切到 `session analysis`，产品层切到 `Generation / Remix / Manual Edit`。
 
 ## 1. 系统组成
 
@@ -44,8 +44,14 @@
   - `sourceContext/sourceBlocks/sourceSpotBlocks/sourceToolOutputs`
 
 ### 2.3 `SessionState`
-- 运行态快照：`context/blocks/spotBlocks/toolOutputs`
+- 运行态快照：`context.sessionAnalysis + context/blocks/spotBlocks/toolOutputs`
 - 保留旧 handbook 字段用于兼容和回滚（逐步下线）
+- 当前 first pass **不迁移** 这些字段：
+  - `blocks`
+  - `spotBlocks`
+  - `toolOutputs`
+- 2.0 主链路优先依赖 `context.sessionAnalysis`
+- Remix 与 Spots 的兼容路径仍可读取 `blocks / spotBlocks`
 
 ### 2.4 `SessionStep`
 - 每个工具步骤一条记录：`RUNNING/SUCCESS/ERROR/CANCELLED`
@@ -75,18 +81,37 @@
 - 中断：`markSessionCancelled`
 - 未捕获错误：`markSessionError`
 
-## 4. 多 Handbook 的生成与切换
+## 4. 多 Handbook 的生成、Remix 与切换
 
-### 4.1 生成
-- `generate_handbook_html` 成功后调用 `createSessionHandbook`
-- 创建新 `Handbook`，并 `setActive=true`
-- 工具输出返回 `handbook_id` 与 `preview_url`
+### 4.1 首轮生成
+- `full_pipeline` 最终调用 `generate_handbook_html`
+- 成功后创建新 `Handbook`，并 `setActive=true`
+- 工具输出返回 `handbook_id`、`preview_url`，并在 `sourceContext` 记录最小 provenance
+- 对模型与前端消息流，2.0 使用 `analyze_session_data`
+- 底层持久化仍保留 `build_travel_blocks` 这个内部步骤名，但真实职责已改成 `Analyze Session Data`
+- 它的主输出是 `session_analysis`
+- `blocks / spotBlocks` 由 `session_analysis` 派生，仅用于兼容旧编辑器和旧展示逻辑
 
-### 4.2 切换
+### 4.2 Remix
+- Remix 入口优先复用 `sessionAnalysis + runtime images`
+- 如果旧会话只有 `blocks`，仍通过兼容缓存继续工作
+- 前端会先创建一个占位 draft handbook，再触发 `generate_handbook_html`
+- 工具完成后更新这个 remix draft，并切到新的 `activeHandbookId`
+- 当前实现仍复用内部 `handbook_regen` orchestration mode，但产品语义上它已经是 Remix
+
+### 4.3 普通手动编辑
+- handbook 视图提供最小手动 HTML 编辑器
+- 编辑保存通过：
+  - `PATCH /api/sessions/[id]/handbooks/[handbookId]`
+- 本次保存只更新 handbook-level 字段（当前主要是 `html`）
+- **不会** 清空 `sourceContext.sessionAnalysis / sourceBlocks / sourceSpotBlocks / sourceToolOutputs`，避免破坏后续 remix 输入
+- 当前版本未接入 `Editor Agent + MCP`
+
+### 4.4 切换
 - 前端调用：`POST /api/sessions/[id]/handbooks/[handbookId]/activate`
 - `Session.activeHandbookId` 更新
 
-### 4.3 生命周期
+### 4.5 生命周期
 - 前端调用：`PATCH /api/sessions/[id]/handbooks/[handbookId]/lifecycle`
 - 首页与详情页都统一为 handbook 级调用（不再走旧 session 级路径）
 
@@ -103,6 +128,8 @@
 ### 5.3 `session-editor-store`
 - 维护 `activeHandbookId`
 - 维护 handbook 级 html/preview 与中间视图状态
+- 当前已承担 handbook-first 默认视图投影
+- 普通手动编辑的 dirty draft 目前由页面 hook 本地维护，不持久化到 store
 
 ## 6. API 清单（多 Handbook）
 
@@ -130,5 +157,6 @@
 
 然后：
 - 恢复消息历史
-- 恢复运行态 blocks/toolOutputs
+- 恢复运行态 `sessionAnalysis / blocks / toolOutputs`
 - 恢复 active handbook 对应的预览
+- 若当前 session 已有 handbook，中心工作区默认优先进入 handbook 视图

@@ -8,6 +8,7 @@ export function createRuntimeState(): AgentRuntimeState {
     spotCoordinatesResolved: false,
     latestVideoContext: null,
     latestApifyVideos: [],
+    latestSessionAnalysis: null,
     latestHandbookStyle: null,
     latestHandbookImages: [],
     latestImageMode: null,

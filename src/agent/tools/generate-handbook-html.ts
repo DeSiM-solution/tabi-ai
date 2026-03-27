@@ -1,10 +1,15 @@
 import { tool } from 'ai';
 import { runTextTask } from '@/lib/model-management';
+import { buildLegacyBlockDataFromSessionAnalysis } from '@/lib/session-analysis';
 import {
   getHandbookStyleInstruction,
   getHandbookStyleLabel,
   normalizeHandbookStyle,
 } from '@/lib/handbook-style';
+import {
+  LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+  SESSION_ANALYSIS_TOOL_NAME,
+} from '@/lib/session-analysis-tool';
 import {
   createSessionHandbook,
   setActiveHandbook,
@@ -30,6 +35,60 @@ import {
   normalizeThumbnailUrl,
   stripVideoEmbeds,
 } from './shared';
+import type { SessionAnalysis } from '@/lib/session-analysis';
+
+function toKnownSpotIds(
+  sessionAnalysis: SessionAnalysis | null,
+  spotBlocks: Array<{ block_id: string }>,
+): string[] {
+  const ids = sessionAnalysis?.spots.length
+    ? sessionAnalysis.spots.map(spot => spot.spot_id)
+    : spotBlocks.map(spot => spot.block_id);
+  return [...new Set(ids.map(id => id.trim()).filter(Boolean))];
+}
+
+function extractUsedSpotIdsFromHtml(options: {
+  html: string;
+  knownSpotIds: string[];
+  sessionAnalysis: SessionAnalysis | null;
+}): string[] {
+  const { html, knownSpotIds, sessionAnalysis } = options;
+  if (knownSpotIds.length === 0) return [];
+
+  const knownSpotIdSet = new Set(knownSpotIds);
+  const idsByDataAttr = new Set<string>();
+  const spotAttrRegex = /data-spot-id\s*=\s*["']([^"']+)["']/gi;
+  let match: RegExpExecArray | null;
+  match = spotAttrRegex.exec(html);
+  while (match) {
+    const spotId = match[1]?.trim() ?? '';
+    if (knownSpotIdSet.has(spotId)) {
+      idsByDataAttr.add(spotId);
+    }
+    match = spotAttrRegex.exec(html);
+  }
+  if (idsByDataAttr.size > 0) {
+    return knownSpotIds.filter(spotId => idsByDataAttr.has(spotId));
+  }
+
+  if (sessionAnalysis?.spots.length) {
+    const htmlLower = html.toLowerCase();
+    const idsByNameMention = new Set<string>();
+    for (const spot of sessionAnalysis.spots) {
+      const normalizedName = spot.name.trim().toLowerCase();
+      if (!normalizedName) continue;
+      if (htmlLower.includes(normalizedName)) {
+        idsByNameMention.add(spot.spot_id);
+      }
+    }
+    if (idsByNameMention.size > 0) {
+      return knownSpotIds.filter(spotId => idsByNameMention.has(spotId));
+    }
+  }
+
+  // Keep backward compatibility for old HTML generations that don't include data-spot-id yet.
+  return knownSpotIds;
+}
 
 export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
   return tool({
@@ -52,13 +111,18 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
         };
 
         const startedAt = Date.now();
+        const effectiveSessionAnalysis = ctx.runtime.latestSessionAnalysis;
         const effectiveBlocks =
           Array.isArray(input.blocks) && input.blocks.length > 0
             ? input.blocks
-            : ctx.runtime.latestBlocks;
+            : ctx.runtime.latestBlocks.length > 0
+              ? ctx.runtime.latestBlocks
+              : effectiveSessionAnalysis
+                ? buildLegacyBlockDataFromSessionAnalysis(effectiveSessionAnalysis).blocks
+                : [];
         if (!effectiveBlocks || effectiveBlocks.length === 0) {
           throw new Error(
-            'No blocks available for handbook generation. Run build_travel_blocks first.',
+            'No analyzed session data available for handbook generation. Run Analyze Session Data first.',
           );
         }
 
@@ -67,12 +131,15 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
             ? input.spot_blocks
             : ctx.runtime.latestSpotBlocks.length > 0
               ? ctx.runtime.latestSpotBlocks
-              : getSpotBlocks(effectiveBlocks);
+              : effectiveSessionAnalysis
+                ? buildLegacyBlockDataFromSessionAnalysis(effectiveSessionAnalysis).spot_blocks
+                : getSpotBlocks(effectiveBlocks);
         const fallbackThumbnailUrl = normalizeThumbnailUrl(input.thumbnailUrl)
           ?? ctx.runtime.latestVideoContext?.thumbnailUrl
           ?? null;
 
         // Keep latest editable blocks in runtime even if later image resolution fails.
+        ctx.runtime.latestSessionAnalysis = effectiveSessionAnalysis;
         ctx.runtime.latestBlocks = effectiveBlocks;
         ctx.runtime.latestSpotBlocks = spotBlocks;
 
@@ -233,7 +300,11 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           }
         }
 
-        for (const toolName of ['build_travel_blocks', 'resolve_spot_coordinates'] as const) {
+        for (const toolName of [
+          SESSION_ANALYSIS_TOOL_NAME,
+          LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+          'resolve_spot_coordinates',
+        ] as const) {
           const toolOutput = ctx.runtime.latestToolOutputs[toolName];
           if (!isRecord(toolOutput)) continue;
           if ('thumbnailUrl' in toolOutput) {
@@ -296,6 +367,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
                 hashtags: ctx.runtime.latestVideoContext?.hashtags ?? [],
               },
               thumbnailUrl: resolvedThumbnailUrl,
+              sessionAnalysis: effectiveSessionAnalysis,
               blocks: effectiveBlocks,
               blocksWithImages: blocksWithImagesForPrompt,
               spotBlocks,
@@ -328,26 +400,40 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           }
           throw new Error(`generate_handbook_html failed: ${toErrorMessage(error)}`);
         }
+        const knownSpotIds = toKnownSpotIds(effectiveSessionAnalysis, spotBlocks);
+        const usedSpotIds = extractUsedSpotIdsFromHtml({
+          html,
+          knownSpotIds,
+          sessionAnalysis: effectiveSessionAnalysis,
+        });
 
         ctx.runtime.latestHandbookHtml = html;
         ctx.runtime.requestHasGeneratedHandbook = true;
+        const requestedHandbookId =
+          typeof input.handbookId === 'string' && input.handbookId.trim()
+            ? input.handbookId.trim()
+            : null;
+        const generationKind = requestedHandbookId ? 'remix' : 'initial';
         let handbookId: string | null = null;
         if (ctx.sessionId && ctx.userId) {
-          const requestedHandbookId =
-            typeof input.handbookId === 'string' && input.handbookId.trim()
-              ? input.handbookId.trim()
-              : null;
-          if (requestedHandbookId) {
+          const sourceContext = {
+            video: ctx.runtime.latestVideoContext,
+            apifyVideos: ctx.runtime.latestApifyVideos,
+            sessionAnalysis: ctx.runtime.latestSessionAnalysis,
+            handbookStyle,
+            handbookStyleLabel,
+              styleAtGeneration: handbookStyle,
+              generationKind,
+              handbookGenerationStatus: 'ready',
+              usedSpotIds,
+              used_spot_ids: usedSpotIds,
+            };
+            if (requestedHandbookId) {
             const updatedHandbook = await updateSessionHandbook(requestedHandbookId, ctx.userId, {
               title: resolvedTitle,
               html,
               previewPath: null,
-              sourceContext: {
-                video: ctx.runtime.latestVideoContext,
-                apifyVideos: ctx.runtime.latestApifyVideos,
-                handbookStyle,
-                handbookStyleLabel,
-              },
+              sourceContext,
               sourceBlocks: effectiveBlocks,
               sourceSpotBlocks: spotBlocks,
               sourceToolOutputs: ctx.runtime.latestToolOutputs,
@@ -366,12 +452,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
               html,
               lifecycle: 'DRAFT',
               previewPath: null,
-              sourceContext: {
-                video: ctx.runtime.latestVideoContext,
-                apifyVideos: ctx.runtime.latestApifyVideos,
-                handbookStyle,
-                handbookStyleLabel,
-              },
+              sourceContext,
               sourceBlocks: effectiveBlocks,
               sourceSpotBlocks: spotBlocks,
               sourceToolOutputs: ctx.runtime.latestToolOutputs,
@@ -407,6 +488,9 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           image_mode: ctx.runtime.latestImageMode,
           handbook_style: handbookStyle,
           handbook_style_label: handbookStyleLabel,
+          used_spot_ids: usedSpotIds,
+          used_spot_count: usedSpotIds.length,
+          generation_kind: generationKind,
           generated_at: new Date().toISOString(),
           html_length: html.length,
           html_included: includeInlineHtml,
@@ -434,6 +518,7 @@ export function createGenerateHandbookHtmlTool(ctx: AgentToolContext) {
           matched_image_count: handbookResult.matched_image_count,
           image_mode: handbookResult.image_mode,
           handbook_style: handbookResult.handbook_style,
+          used_spot_count: handbookResult.used_spot_count,
           html_length: handbookResult.html_length,
           handbook_id: handbookResult.handbook_id,
           preview_url: handbookResult.preview_url,

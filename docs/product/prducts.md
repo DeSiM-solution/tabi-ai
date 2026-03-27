@@ -113,12 +113,13 @@ TravelMuse AI（产品名：Tabi）致力于成为全球旅游创作者的**"内
 |------|------|------|---------|----------|
 | 1 | `parse_youtube_input` | 解析用户输入，提取 YouTube URL | — | — |
 | 2 | `crawl_youtube_videos` | 抓取视频元数据 + 字幕 | — | Apify |
-| 3 | `build_travel_blocks` | 结构化提取旅行内容块 | Gemini 2.5 Pro | — |
+| 3 | `analyze_session_data` | 结构化提取 Session Analysis（sections / spots / remix hints） | Gemini 2.5 Pro | — |
 | 4 | `resolve_spot_coordinates` | 地点地理编码 | Gemini 2.5 Flash | Nominatim |
 | 5 | `search_image` / `generate_image` | 图片搜索或 AI 生成 | Gemini 2.5 Flash | Unsplash / Imagen |
 | 6 | `generate_handbook_html` | 生成完整 HTML 手册 | Gemini 3 Pro Preview | — |
 
 **关键技术特性：**
+- **2.0 命名策略：** 模型与前端显示统一使用 `analyze_session_data`，数据库内部仍兼容 `build_travel_blocks`
 - **模型回退策略：** 每个任务配置主模型 + 回退模型，自动切换
 - **Schema 校验：** Zod 强类型验证 + 业务规则（4-16 blocks，唯一 ID 等）
 - **中断恢复：** 每步完成后持久化快照，可从失败步骤恢复

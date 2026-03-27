@@ -5,13 +5,17 @@ import { DefaultChatTransport } from 'ai';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { LuSquare } from 'react-icons/lu';
 import { toast } from 'sonner';
-import { ChatHeader } from './_components/chat-header';
-import { ChatInput } from './_components/chat-input';
 import { ChatMessages } from './_components/chat-messages';
-import { SessionBlocksPanel } from './_components/session-blocks-panel';
+import { HandbookAssistantPanel } from './_components/handbook-assistant-panel';
+import {
+  HandbookWorkspacePanel,
+  type HandbookWorkspaceTab,
+} from './_components/handbook-workspace-panel';
 import { SessionHtmlPanel } from './_components/session-html-panel';
 import { SessionLoadingOverlay } from './_components/session-loading-overlay';
+import { SessionSpotsPanel } from './_components/session-spots-panel';
 import { SessionStyleConfirmModal } from './_components/session-style-confirm-modal';
 import {
   generateHandbookFromEditor as generateHandbookFromEditorAction,
@@ -32,13 +36,14 @@ import {
   useSessionEditorSnapshot,
 } from './_stores/session-editor-store';
 import { useEditorImageBackfill } from './_hooks/use-editor-image-backfill';
+import { useHandbookManualEditor } from './_hooks/use-handbook-manual-editor';
 import { useHtmlPreviewLoading } from './_hooks/use-html-preview-loading';
 import { useSessionHydration } from './_hooks/use-session-hydration';
 import { useToolOutputListener } from './_hooks/use-tool-output-listener';
 import { useUnsavedGuard } from './_hooks/use-unsaved-guard';
 import { useVersionMenuClose } from './_hooks/use-version-menu-close';
 import {
-  createEditorSession,
+  isRecord,
   toGuidePrompt,
   type EditorSession,
   type UnknownRecord,
@@ -50,7 +55,6 @@ import {
 import {
   persistCachedSessionMessages,
 } from './_lib/message-cache';
-import { compactChatMessagesForChatApi } from './_lib/message-compact';
 import { toGuidePreviewPath, toPreviewAddress } from './_lib/preview-utils';
 import { patchSessionState } from './_lib/session-api';
 import { toEditorSessionSignature } from './_lib/editor-session-utils';
@@ -59,9 +63,20 @@ import {
   type CenterToolbarActionDetail,
 } from './_lib/center-toolbar-actions';
 import {
+  type HandbookSelectionSnapshot,
+  type HandbookStyleProperty,
+} from './_lib/handbook-selection';
+import {
+  buildSpotsPanelViewModel,
+  resolveSpotsSourceOutput,
+} from './_lib/spots-view-model';
+import {
+  getAssistantWorkspaceMode,
+  getWorkspaceStatusText,
+} from './_lib/workspace-presentation';
+import {
   formatToolLabel,
   sessionActions,
-  SESSION_TOOL_ORDER,
   useSessionStore,
 } from '@/stores/session-store';
 import { sessionsActions, useSessionsStore } from '@/stores/sessions-store';
@@ -93,6 +108,24 @@ type HandbookVersionMenuItem = {
   isGenerating: boolean;
 };
 
+function collectImageUrlsFromToolOutput(output: unknown): string[] {
+  if (!isRecord(output)) return [];
+  const rawImages = Array.isArray(output.images)
+    ? output.images
+    : Array.isArray(output.image_refs)
+      ? output.image_refs
+      : [];
+  const urls: string[] = [];
+  for (const rawImage of rawImages) {
+    if (!isRecord(rawImage)) continue;
+    if (typeof rawImage.image_url !== 'string') continue;
+    const normalizedImageUrl = rawImage.image_url.trim();
+    if (!normalizedImageUrl) continue;
+    urls.push(normalizedImageUrl);
+  }
+  return urls;
+}
+
 export default function Chat() {
   const params = useParams<{ id: string }>();
   const sessionId = typeof params.id === 'string' ? params.id : '';
@@ -113,6 +146,7 @@ export default function Chat() {
     currentStep: state.currentStep,
     failedStep: state.failedStep,
     completedSteps: state.completedSteps,
+    toolOutputs: state.toolOutputs,
   }));
   const editorState = useSessionEditorSnapshot(sessionId);
   const sessionHandbooksState = useSessionHandbooksState(sessionId);
@@ -129,8 +163,6 @@ export default function Chat() {
     isSavingBlocks,
   } = editorState;
 
-  const [input, setInput] = useState('');
-  const [inputError, setInputError] = useState('');
   const [isSessionHydrating, setIsSessionHydrating] = useState(false);
   const [hydratedToolDurations, setHydratedToolDurations] = useState<Record<string, number>>(
     {},
@@ -150,6 +182,8 @@ export default function Chat() {
   const [pendingDeleteHandbookVersionId, setPendingDeleteHandbookVersionId] = useState<
     string | null
   >(null);
+  const [pendingHandbookSwitch, setPendingHandbookSwitch] =
+    useState<HandbookVersionMenuItem | null>(null);
   const [pendingGeneratingHandbookVersion, setPendingGeneratingHandbookVersion] = useState<
     PendingGeneratingHandbookVersion | null
   >(null);
@@ -158,11 +192,18 @@ export default function Chat() {
   const [csvExportGuide, setCsvExportGuide] = useState<CsvExportGuideState | null>(
     null,
   );
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    useState<HandbookWorkspaceTab>('edit');
+  const [isVisualHandbookEditorReady, setIsVisualHandbookEditorReady] =
+    useState(false);
+  const [handbookSelection, setHandbookSelection] =
+    useState<HandbookSelectionSnapshot | null>(null);
   const versionMenuRef = useRef<HTMLDivElement | null>(null);
   const isGuestUser = authUser?.isGuest ?? true;
   useHydrateAuthStore();
 
   const didSendInitialInputRef = useRef(false);
+  const autoOpenedVisualHandbookRef = useRef<string | null>(null);
   const pendingToolbarGenerationRef = useRef<{ beforeCount: number } | null>(null);
   const persistedHandbookStyleRef = useRef<string>('');
   const persistingHandbookStyleKeyRef = useRef<string | null>(null);
@@ -172,6 +213,9 @@ export default function Chat() {
     sourceKey: string;
     signature: string;
   } | null>(null);
+  const applyHandbookStyleRef = useRef<
+    ((property: HandbookStyleProperty, value: string) => boolean) | null
+  >(null);
   const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -216,8 +260,8 @@ export default function Chat() {
         : toPreviewAddress(handbookPreviewUrl, guidePreviewPath),
     [guidePreviewPath, handbookPreviewUrl, isGeneratingHandbookAddressState],
   );
-  const previewFrameWidth = previewDevice === 'mobile' ? 375 : 720;
-  const previewFrameMaxHeight = 'calc(100vh - 128px)';
+  const previewFrameWidth = previewDevice === 'mobile' ? '375px' : '100%';
+  const previewFrameMaxHeight = '100%';
   const {
     htmlPreviewLoadPhase,
     showHtmlPreviewOverlay,
@@ -230,13 +274,35 @@ export default function Chat() {
     handbookPreviewUrl,
     handbookHtml,
   });
+  const {
+    draftHtml: handbookManualDraftHtml,
+    isDirty: isHandbookManualEditorDirty,
+    isLoadingSource: isHandbookManualEditorLoading,
+    isOpen: isHandbookManualEditorOpen,
+    isSaving: isHandbookManualEditorSaving,
+    changeDraftHtml: changeHandbookManualDraftHtml,
+    discardDraft: discardHandbookManualEditor,
+    openEditor: openHandbookManualEditor,
+    resetDraft: resetHandbookManualDraft,
+    saveDraft: saveHandbookManualDraft,
+  } = useHandbookManualEditor({
+    sessionId,
+    activeHandbookId,
+    handbookHtml,
+  });
+
+  useEffect(() => {
+    if (!sessionId) return;
+    sessionEditorActions.setHandbookManualEditorDirty(sessionId, isHandbookManualEditorDirty);
+    sessionEditorActions.setHandbookManualEditorSaving(sessionId, isHandbookManualEditorSaving);
+  }, [isHandbookManualEditorDirty, isHandbookManualEditorSaving, sessionId]);
 
   const {
     isLeaveConfirmOpen,
     cancelLeaveWithUnsavedWarning,
     confirmLeaveWithUnsavedWarning,
   } = useUnsavedGuard({
-    isDirty: isEditorDirty,
+    isDirty: isEditorDirty || isHandbookManualEditorDirty,
     router,
     resetKey: sessionId,
   });
@@ -387,6 +453,9 @@ export default function Chat() {
     setPendingGeneratingHandbookVersion(null);
     setIsGeneratingNewHandbook(false);
     setIsEditorDirty(false);
+    setIsVisualHandbookEditorReady(false);
+    setHandbookSelection(null);
+    applyHandbookStyleRef.current = null;
     lastSavedEditorSignatureRef.current = null;
     pendingGeneratingHandbookVersionRef.current = null;
     sessionActions.reset();
@@ -394,6 +463,13 @@ export default function Chat() {
     sessionEditorActions.ensureSession(sessionId);
     handbooksActions.ensureSession(sessionId);
   }, [sessionId, setMessages]);
+
+  useEffect(() => {
+    if (isHandbookManualEditorOpen) return;
+    setIsVisualHandbookEditorReady(false);
+    setHandbookSelection(null);
+    applyHandbookStyleRef.current = null;
+  }, [isHandbookManualEditorOpen]);
 
   useEffect(() => {
     const styleFromQuery = normalizeHandbookStyle(initialStyle);
@@ -601,21 +677,6 @@ export default function Chat() {
     isSessionHydrating,
   ]);
 
-  const openEditor = (sourceKey: string, toolName: string, output: unknown) => {
-    if (!requireLogin('Editing blocks requires an account login.')) return;
-    if (!sessionId) return;
-    const session = createEditorSession(sourceKey, toolName, output);
-    if (!session) {
-      console.warn('[chat-ui] open-editor-failed', {
-        sourceKey,
-        toolName,
-      });
-      return;
-    }
-    sessionEditorActions.setEditorSession(sessionId, session);
-    sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
-  };
-
   const saveEditor = useCallback(async (session: EditorSession) => {
     await saveEditorSession({
       sessionId,
@@ -670,13 +731,23 @@ export default function Chat() {
   ]);
 
   const openStyleConfirmModal = useCallback((session: EditorSession) => {
-    if (!requireLogin('Manual HTML generation requires an account login.')) return;
+    if (!requireLogin('Handbook remix requires an account login.')) return;
     if (!sessionId || isBusy) return;
+    if (isHandbookManualEditorDirty) {
+      toast.error('Save or reset handbook HTML edits before remixing.');
+      return;
+    }
     setPendingStyleSession(session);
     setSelectedStyleOption(toStyleSelection(handbookStyle));
     setSetAsSessionDefault(true);
     setIsStyleConfirmOpen(true);
-  }, [handbookStyle, isBusy, requireLogin, sessionId]);
+  }, [
+    handbookStyle,
+    isBusy,
+    isHandbookManualEditorDirty,
+    requireLogin,
+    sessionId,
+  ]);
 
   const closeStyleConfirmModal = useCallback(() => {
     setIsStyleConfirmOpen(false);
@@ -700,25 +771,65 @@ export default function Chat() {
     setAsSessionDefault,
   ]);
 
+  const handleRefreshHandbookPreview = useCallback(() => {
+    if (!sessionId) return;
+    const base = (handbookPreviewUrl ?? guidePreviewPath).split('?')[0];
+    if (!base) return;
+    sessionEditorActions.setHandbookPreviewUrl(
+      sessionId,
+      `${base}?v=${Date.now()}`,
+      activeHandbookId,
+    );
+    sessionEditorActions.setCenterViewMode(sessionId, 'html');
+  }, [activeHandbookId, guidePreviewPath, handbookPreviewUrl, sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
 
     const handleCenterToolbarAction = (event: Event) => {
       const { detail } = event as CustomEvent<CenterToolbarActionDetail>;
       if (!detail || detail.sessionId !== sessionId) return;
-      if (!editorSession) return;
+
+      if (detail.action === 'refresh') {
+        if (isHandbookManualEditorOpen) {
+          if (!isHandbookManualEditorDirty) return;
+          resetHandbookManualDraft();
+          toast.success('Unsaved handbook edits were reset.');
+          return;
+        }
+        handleRefreshHandbookPreview();
+        return;
+      }
 
       if (detail.action === 'save') {
+        if (isHandbookManualEditorOpen) {
+          void (async () => {
+            try {
+              const saved = await saveHandbookManualDraft();
+              if (!saved) return;
+              toast.success('Handbook saved.');
+            } catch (error) {
+              console.error('[chat-ui] save-handbook-manual-editor-failed', error);
+              toast.error(
+                error instanceof Error ? error.message : 'Failed to save handbook.',
+              );
+            }
+          })();
+          return;
+        }
+        if (!editorSession) return;
         saveEditor(editorSession);
         return;
       }
 
       if (detail.action === 'export') {
+        if (!editorSession) return;
         exportEditorCsv(editorSession);
         return;
       }
 
       if (detail.action === 'generate') {
+        if (!editorSession) return;
         openStyleConfirmModal(editorSession);
       }
     };
@@ -737,7 +848,12 @@ export default function Chat() {
   }, [
     editorSession,
     exportEditorCsv,
+    handleRefreshHandbookPreview,
+    isHandbookManualEditorDirty,
+    isHandbookManualEditorOpen,
     openStyleConfirmModal,
+    resetHandbookManualDraft,
+    saveHandbookManualDraft,
     saveEditor,
     sessionId,
   ]);
@@ -812,18 +928,7 @@ export default function Chat() {
     markEditorSessionAsSaved,
   });
 
-  const headerSubtitle = processState.stopped
-    ? `Stopped at ${formatToolLabel(processState.currentStep)}`
-    : processState.error || processState.failedStep
-    ? `Failed at ${formatToolLabel(processState.failedStep)}`
-    : processState.loading
-      ? formatToolLabel(processState.currentStep)
-      : processState.completedSteps.length > 0
-        ? `Completed ${processState.completedSteps.length}/${SESSION_TOOL_ORDER.length} steps`
-        : 'Refine your guide';
-
-  const showBlocksView = centerViewMode === 'blocks';
-  const showHtmlView = centerViewMode === 'html';
+  const showHtmlView = true;
   const handbookVersionMenuItems = useMemo<HandbookVersionMenuItem[]>(() => {
     const persistedItems = sessionHandbooksState.handbooks.map(handbook => ({
       id: handbook.id,
@@ -869,26 +974,129 @@ export default function Chat() {
       ) ?? null
     )
     : null;
-  const isSessionSummaryLoading = currentSessionSummary?.status === 'loading';
-  const shouldShowBlocksLoadingByProcess =
-    (isSessionSummaryLoading || processState.loading) &&
-    !processState.error &&
-    !processState.failedStep;
-  const showBlocksLoadingState = Boolean(
-    showBlocksView &&
-      !editorSession &&
-      shouldShowBlocksLoadingByProcess,
-  );
+  const showBlocksLoadingState = false;
   const showNewHandbookLoadingState = Boolean(
     showHtmlView &&
       !isSessionHydrating &&
       handbookStatus === 'generating' &&
       (isGeneratingNewHandbook || isGeneratingHandbookActive),
   );
+  const hasRenderableHandbook =
+    handbookStatus === 'ready' || Boolean(handbookPreviewUrl || handbookHtml);
+  const assistantWorkspaceMode = getAssistantWorkspaceMode({
+    requestLoading: processState.loading || isBusy,
+    handbookStatus,
+    hasRenderableHandbook,
+  });
+  const headerSubtitle = getWorkspaceStatusText({
+    stopped: processState.stopped,
+    error: processState.error,
+    failedStep: processState.failedStep,
+    loading: processState.loading || isBusy,
+    currentStep: processState.currentStep,
+    completedStepsCount: processState.completedSteps.length,
+    hasRenderableHandbook,
+  });
+  const showHandbookProcessingState = Boolean(
+    showHtmlView &&
+      !isSessionHydrating &&
+      assistantWorkspaceMode === 'processing' &&
+      !handbookPreviewUrl &&
+      !handbookHtml,
+  );
   const centerLoadingLabel = 'Loading guide...';
+  const spotsSourceOutput = useMemo(
+    () =>
+      resolveSpotsSourceOutput({
+        editorSession,
+        resolveSpotCoordinatesOutput: processState.toolOutputs.resolve_spot_coordinates,
+        buildTravelBlocksOutput: processState.toolOutputs.analyze_session_data,
+      }),
+    [editorSession, processState.toolOutputs.analyze_session_data, processState.toolOutputs.resolve_spot_coordinates],
+  );
+  const spotsViewModel = useMemo(
+    () =>
+      buildSpotsPanelViewModel({
+        output: spotsSourceOutput,
+        title: editorSession?.title || currentSessionSummary?.title || 'travel-guide',
+      }),
+    [currentSessionSummary?.title, editorSession, spotsSourceOutput],
+  );
+  const sessionImageUrls = useMemo(() => {
+    const imageUrlSet = new Set<string>();
+    const addImageUrl = (value: string) => {
+      const normalizedImageUrl = value.trim();
+      if (!normalizedImageUrl) return;
+      imageUrlSet.add(normalizedImageUrl);
+    };
+
+    for (const block of editorSession?.blocks ?? []) {
+      addImageUrl(block.imageUrl);
+    }
+
+    for (const output of Object.values(processState.toolOutputs)) {
+      for (const imageUrl of collectImageUrlsFromToolOutput(output)) {
+        addImageUrl(imageUrl);
+      }
+    }
+
+    if (typeof handbookManualDraftHtml === 'string' && handbookManualDraftHtml.trim()) {
+      const imageTagMatches = handbookManualDraftHtml.matchAll(
+        /<img[^>]*\ssrc=["']([^"']+)["'][^>]*>/gi,
+      );
+      for (const match of imageTagMatches) {
+        if (typeof match[1] === 'string') {
+          addImageUrl(match[1]);
+        }
+      }
+    }
+
+    return Array.from(imageUrlSet);
+  }, [editorSession?.blocks, handbookManualDraftHtml, processState.toolOutputs]);
+
+  const handleOpenSpotsMaps = useCallback(() => {
+    if (spotsViewModel.mappableItems.length === 0) {
+      toast.warning('No mapped spots available yet.');
+      return;
+    }
+
+    window.open(spotsViewModel.openMapsUrl, '_blank', 'noopener,noreferrer');
+  }, [spotsViewModel.mappableItems.length, spotsViewModel.openMapsUrl]);
+
+  const handleDownloadSpotsCsv = useCallback(() => {
+    if (!spotsViewModel.csvContent || !spotsViewModel.csvFileName) {
+      toast.warning('No CSV export available until spots have coordinates.');
+      return;
+    }
+
+    const blob = new Blob([spotsViewModel.csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = spotsViewModel.csvFileName;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV downloaded.', {
+      description: 'Import the file in Google My Maps or continue downstream processing.',
+    });
+  }, [spotsViewModel.csvContent, spotsViewModel.csvFileName]);
+
+  const handleOpenRemixWorkspace = useCallback(() => {
+    if (!editorSession) {
+      toast.warning('No structured session data is available for remix yet.');
+      return;
+    }
+    openStyleConfirmModal(editorSession);
+  }, [editorSession, openStyleConfirmModal]);
   const shouldRenderPreviewPortal = Boolean(
     isSessionHydrating ||
       showBlocksLoadingState ||
+      showHandbookProcessingState ||
+      processState.loading ||
       editorSession ||
       handbookHtml ||
       handbookPreviewUrl ||
@@ -897,21 +1105,9 @@ export default function Chat() {
 
   useEffect(() => {
     if (!sessionId) return;
-    if (centerViewMode === 'blocks') return;
-    if (isSessionHydrating) return;
-    if (!isSessionSummaryLoading && !processState.loading) return;
-    if (editorSession || handbookHtml || handbookPreviewUrl) return;
-    sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
-  }, [
-    centerViewMode,
-    editorSession,
-    handbookHtml,
-    handbookPreviewUrl,
-    isSessionHydrating,
-    isSessionSummaryLoading,
-    processState.loading,
-    sessionId,
-  ]);
+    if (assistantWorkspaceMode !== 'processing') return;
+    sessionEditorActions.setCenterViewMode(sessionId, 'html');
+  }, [assistantWorkspaceMode, sessionId]);
 
   useVersionMenuClose({
     isOpen: isVersionMenuOpen,
@@ -938,6 +1134,55 @@ export default function Chat() {
       toast.error(error instanceof Error ? error.message : 'Failed to switch handbook.');
     }
   }, [activeHandbookId, sessionId]);
+
+  const handleOpenVisualHandbookEditor = useCallback(async () => {
+    if (isHandbookManualEditorOpen) {
+      return;
+    }
+
+    try {
+      await openHandbookManualEditor();
+    } catch (error) {
+      console.error('[chat-ui] open-handbook-visual-editor-failed', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to load handbook HTML.');
+    }
+  }, [isHandbookManualEditorOpen, openHandbookManualEditor]);
+
+  useEffect(() => {
+    if (!sessionId || !activeHandbookId) return;
+    if (activeWorkspaceTab !== 'edit') return;
+    if (assistantWorkspaceMode !== 'edit') return;
+    if (!hasRenderableHandbook) return;
+    if (autoOpenedVisualHandbookRef.current === activeHandbookId) return;
+
+    autoOpenedVisualHandbookRef.current = activeHandbookId;
+    void handleOpenVisualHandbookEditor();
+  }, [
+    activeHandbookId,
+    activeWorkspaceTab,
+    assistantWorkspaceMode,
+    handleOpenVisualHandbookEditor,
+    hasRenderableHandbook,
+    sessionId,
+  ]);
+
+  const handleApplyHandbookStyle = useCallback(
+    (property: HandbookStyleProperty, value: string) => {
+      const applyStyle = applyHandbookStyleRef.current;
+      if (!applyStyle) return;
+      applyStyle(property, value);
+    },
+    [],
+  );
+
+  const handleVisualApplyStyleReady = useCallback(
+    (
+      applyStyle: ((property: HandbookStyleProperty, value: string) => boolean) | null,
+    ) => {
+      applyHandbookStyleRef.current = applyStyle;
+    },
+    [],
+  );
 
   const requestDeleteHandbookVersion = useCallback((handbookId: string) => {
     if (!handbookId || isRemovingHandbookVersion) return;
@@ -969,33 +1214,6 @@ export default function Chat() {
     }
   }, [pendingDeleteHandbookVersionId, sessionId]);
 
-  const handleInputChange = useCallback((value: string) => {
-    setInput(value);
-    if (inputError) setInputError('');
-  }, [inputError]);
-
-  const handleChatSubmit = useCallback(() => {
-    if (!requireLogin('Sending chat messages requires an account login.')) return;
-    const prompt = toGuidePrompt(input);
-    if (!prompt) {
-      setInputError('Please enter a prompt or YouTube URL.');
-      return;
-    }
-
-    const compactedMessages = compactChatMessagesForChatApi(messages);
-    const shouldDelaySendAfterCompaction = compactedMessages !== messages;
-    if (shouldDelaySendAfterCompaction) {
-      setMessages(compactedMessages);
-      window.setTimeout(() => {
-        sendMessage({ text: prompt });
-      }, 0);
-    } else {
-      sendMessage({ text: prompt });
-    }
-    setInput('');
-    setInputError('');
-  }, [input, messages, requireLogin, sendMessage, setMessages]);
-
   const handleStopRequest = useCallback(async () => {
     await stop();
     sessionActions.markStopped();
@@ -1013,47 +1231,131 @@ export default function Chat() {
   }, [processState.currentStep, sessionId, stop]);
 
   const handleSelectHandbookVersion = useCallback((handbook: HandbookVersionMenuItem) => {
+    if (handbook.id === activeHandbookId) {
+      setIsVersionMenuOpen(false);
+      return;
+    }
+    if (isHandbookManualEditorDirty && handbook.id !== activeHandbookId) {
+      setPendingHandbookSwitch(handbook);
+      setIsVersionMenuOpen(false);
+      return;
+    }
+    discardHandbookManualEditor();
     if (handbook.isPending) {
       sessionEditorActions.setActiveHandbookId(sessionId, handbook.id);
       setIsVersionMenuOpen(false);
       return;
     }
     void activateHandbookVersion(handbook.id);
-  }, [activateHandbookVersion, sessionId, setIsVersionMenuOpen]);
+  }, [
+    activateHandbookVersion,
+    activeHandbookId,
+    discardHandbookManualEditor,
+    isHandbookManualEditorDirty,
+    sessionId,
+    setIsVersionMenuOpen,
+  ]);
 
-  const hasRenderableHandbook =
-    handbookStatus === 'ready' || Boolean(handbookPreviewUrl || handbookHtml);
+  const confirmPendingHandbookSwitch = useCallback(() => {
+    const target = pendingHandbookSwitch;
+    if (!target) return;
+    discardHandbookManualEditor();
+    setPendingHandbookSwitch(null);
+    if (target.isPending) {
+      sessionEditorActions.setActiveHandbookId(sessionId, target.id);
+      return;
+    }
+    void activateHandbookVersion(target.id);
+  }, [
+    activateHandbookVersion,
+    discardHandbookManualEditor,
+    pendingHandbookSwitch,
+    sessionId,
+  ]);
+
   const showStyleConfirmModal = Boolean(
-    isStyleConfirmOpen && showBlocksView && pendingStyleSession,
+    isStyleConfirmOpen && pendingStyleSession,
+  );
+  const editContent = (
+    <HandbookAssistantPanel
+      mode={assistantWorkspaceMode}
+      isManualEditorOpen={isHandbookManualEditorOpen}
+      isVisualEditorReady={isVisualHandbookEditorReady}
+      selection={handbookSelection}
+      onApplyStyle={handleApplyHandbookStyle}
+      processingContent={
+        <div className="flex h-full min-h-0 flex-col bg-bg-elevated">
+          <ChatMessages
+            sessionId={sessionId}
+            isSessionHydrating={isSessionHydrating}
+            messages={messages}
+            firstUserTextMessage={firstUserTextMessage}
+            editedToolOutputs={editedToolOutputs}
+            persistedToolDurations={hydratedToolDurations}
+            handbookStyle={handbookStyle}
+            isRequestBusy={isBusy}
+            hasRenderableHandbook={hasRenderableHandbook}
+          />
+
+          {isBusy ? (
+            <div className="border-t border-border-light px-4 py-3">
+              <button
+                type="button"
+                onClick={() => void handleStopRequest()}
+                className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-border-light bg-bg-secondary px-3.5 text-[13px] font-medium text-text-primary transition hover:bg-bg-primary"
+              >
+                <LuSquare className="h-4 w-4" />
+                Stop current run
+              </button>
+            </div>
+          ) : null}
+        </div>
+      }
+    />
+  );
+  const remixContent = (
+    <div className="flex h-full min-h-0 flex-col bg-bg-elevated px-4 py-4">
+      <div className="rounded-[14px] border border-border-light bg-bg-secondary p-4">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+          Remix Handbook
+        </p>
+        <p className="mt-2 text-[14px] font-semibold text-text-primary">
+          Generate a fresh handbook from the current stored session data
+        </p>
+        <p className="mt-2 text-[12px] leading-[1.6] text-text-secondary">
+          This keeps the current Generation/Remix flow intact, but reruns handbook creation
+          against the latest stored session data so the result can diverge by style and structure.
+        </p>
+        <p className="mt-3 text-[12px] leading-[1.6] text-text-tertiary">
+          Current style preference: {handbookStyle ?? 'let-tabi-decide'}
+        </p>
+        <button
+          type="button"
+          onClick={handleOpenRemixWorkspace}
+          disabled={!editorSession || isBusy || isSavingBlocks}
+          className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-accent-primary px-4 text-[13px] font-semibold text-text-inverse transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-border-default disabled:text-text-tertiary"
+        >
+          <span>Remix Current Guide</span>
+        </button>
+      </div>
+    </div>
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-elevated">
-      <ChatHeader
-        title={currentSessionSummary?.title || 'Untitled Guide'}
-        subtitle={headerSubtitle}
-      />
-
-      <ChatMessages
-        sessionId={sessionId}
-        isSessionHydrating={isSessionHydrating}
-        messages={messages}
-        firstUserTextMessage={firstUserTextMessage}
-        editedToolOutputs={editedToolOutputs}
-        persistedToolDurations={hydratedToolDurations}
-        handbookStyle={handbookStyle}
-        isRequestBusy={isBusy}
-        hasRenderableHandbook={hasRenderableHandbook}
-        onOpenEditor={openEditor}
-      />
-
-      <ChatInput
-        value={input}
-        inputError={inputError}
-        isBusy={isBusy}
-        onChange={handleInputChange}
-        onSubmit={handleChatSubmit}
-        onStop={handleStopRequest}
+      <HandbookWorkspacePanel
+        statusText={headerSubtitle}
+        activeTab={activeWorkspaceTab}
+        onTabChange={setActiveWorkspaceTab}
+        editContent={editContent}
+        spotsContent={
+          <SessionSpotsPanel
+            viewModel={spotsViewModel}
+            onOpenMaps={handleOpenSpotsMaps}
+            onDownloadCsv={handleDownloadSpotsCsv}
+          />
+        }
+        remixContent={remixContent}
       />
 
       {editorHost && shouldRenderPreviewPortal
@@ -1066,12 +1368,14 @@ export default function Chat() {
                   previewFrameMaxHeight={previewFrameMaxHeight}
                   previewFrameOpacityClass={previewFrameOpacityClass}
                   showNewHandbookLoadingState={showNewHandbookLoadingState}
+                  showProcessingState={showHandbookProcessingState}
                   showHtmlPreviewOverlay={showHtmlPreviewOverlay}
                   htmlPreviewLoadPhase={htmlPreviewLoadPhase}
                   handbookPreviewUrl={handbookPreviewUrl}
                   handbookHtml={handbookHtml}
                   handbookStatus={handbookStatus}
                   handbookError={handbookError}
+                  sessionImageUrls={sessionImageUrls}
                   onHtmlPreviewLoad={handleHtmlPreviewLoad}
                   handbookVersionMenuItems={handbookVersionMenuItems}
                   activeHandbookId={activeHandbookId}
@@ -1080,21 +1384,16 @@ export default function Chat() {
                   isVersionMenuOpen={isVersionMenuOpen}
                   isRemovingHandbookVersion={isRemovingHandbookVersion}
                   versionMenuRef={versionMenuRef}
+                  isManualEditorAvailable={Boolean(activeHandbookId)}
+                  isManualEditorLoading={isHandbookManualEditorLoading}
+                  manualEditorHtml={handbookManualDraftHtml}
                   onToggleVersionMenu={() => setIsVersionMenuOpen(open => !open)}
                   onSelectHandbook={handleSelectHandbookVersion}
                   onRequestDeleteHandbook={requestDeleteHandbookVersion}
-                />
-              )}
-
-              {showBlocksView && (
-                <SessionBlocksPanel
-                  editorSession={editorSession}
-                  isSessionHydrating={isSessionHydrating}
-                  isSavingBlocks={isSavingBlocks}
-                  onChangeEditorSession={nextSession => {
-                    sessionEditorActions.setEditorSession(sessionId, nextSession);
-                  }}
-                  showBlocksLoadingState={showBlocksLoadingState}
+                  onChangeManualEditorHtml={changeHandbookManualDraftHtml}
+                  onVisualEditorReadyChange={setIsVisualHandbookEditorReady}
+                  onVisualSelectionChange={setHandbookSelection}
+                  onVisualApplyStyleReady={handleVisualApplyStyleReady}
                 />
               )}
 
@@ -1169,12 +1468,21 @@ export default function Chat() {
       />
       <ConfirmationDialog
         open={isLeaveConfirmOpen}
-        title="Unsaved Block Changes"
-        description="You have unsaved block edits. Leave this page and discard changes?"
+        title="Unsaved Changes"
+        description="You have unsaved block or handbook edits. Leave this page and discard changes?"
         confirmLabel="Leave"
         cancelLabel="Stay"
         onCancel={cancelLeaveWithUnsavedWarning}
         onConfirm={confirmLeaveWithUnsavedWarning}
+      />
+      <ConfirmationDialog
+        open={Boolean(pendingHandbookSwitch)}
+        title="Discard Handbook Edits?"
+        description="You have unsaved handbook HTML edits. Switch handbooks and discard them?"
+        confirmLabel="Discard and Switch"
+        cancelLabel="Stay"
+        onCancel={() => setPendingHandbookSwitch(null)}
+        onConfirm={confirmPendingHandbookSwitch}
       />
     </div>
   );

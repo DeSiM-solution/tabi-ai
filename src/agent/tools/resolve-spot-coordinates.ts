@@ -1,6 +1,10 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { runStructuredTask } from '@/lib/model-management';
+import {
+  applySpotLocationsToSessionAnalysis,
+  buildLegacyBlockDataFromSessionAnalysis,
+} from '@/lib/session-analysis';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
 import { resolveSpotCoordinatesPrompt } from '@/agent/prompts/resolve-spot-coordinates';
@@ -61,20 +65,50 @@ function resolveVideoMeta(ctx: AgentToolContext): {
   };
 }
 
+function getSourceSpots(ctx: AgentToolContext): Array<{
+  block_id: string;
+  title: string;
+  description: string;
+  location: { lat: number; lng: number } | null;
+  smart_tags: string[];
+}> {
+  if (ctx.runtime.latestSessionAnalysis) {
+    return ctx.runtime.latestSessionAnalysis.spots.map(spot => ({
+      block_id: spot.spot_id,
+      title: spot.name,
+      description: spot.description,
+      location: spot.location,
+      smart_tags: spot.tags,
+    }));
+  }
+
+  return ctx.runtime.latestSpotBlocks.length > 0
+    ? ctx.runtime.latestSpotBlocks
+    : getSpotBlocks(ctx.runtime.latestBlocks);
+}
+
 export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
   return tool({
     description:
-      'Find lat/lng for spot_blocks and return updated blocks with resolved coordinates.',
+      'Resolve lat/lng for analyzed spots and return structured resolved_spots output for handbook and CSV workflows.',
     inputSchema: z.object({}),
     execute: async () =>
       ctx.runToolStep('resolve_spot_coordinates', {}, async () => {
         const startedAt = Date.now();
         const videoMeta = resolveVideoMeta(ctx);
+        const sourceSpots = getSourceSpots(ctx);
+        const initialDerivedBlocks = ctx.runtime.latestSessionAnalysis
+          ? buildLegacyBlockDataFromSessionAnalysis(ctx.runtime.latestSessionAnalysis)
+          : {
+              blocks: ctx.runtime.latestBlocks,
+              spot_blocks: sourceSpots,
+            };
         if (ctx.runtime.spotCoordinatesResolved) {
-          const spotBlocks =
-            ctx.runtime.latestSpotBlocks.length > 0
-              ? ctx.runtime.latestSpotBlocks
-              : getSpotBlocks(ctx.runtime.latestBlocks);
+          const resolvedSpots = sourceSpots.map(spot => ({
+            block_id: spot.block_id,
+            query: spot.description,
+            location: spot.location,
+          }));
           const cachedResult = {
             videoId: videoMeta.videoId,
             videoUrl: videoMeta.videoUrl,
@@ -82,18 +116,16 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
             thumbnailUrl: videoMeta.thumbnailUrl,
             guideTitle: videoMeta.title,
             coverImageUrl: videoMeta.thumbnailUrl,
-            blockCount: ctx.runtime.latestBlocks.length,
-            spotCount: spotBlocks.length,
+            session_analysis: ctx.runtime.latestSessionAnalysis,
+            blockCount: initialDerivedBlocks.blocks.length,
+            spotCount: sourceSpots.length,
             spot_queries: [],
-            resolved_count: spotBlocks.filter(spot => spot.location !== null).length,
-            unresolved_count: spotBlocks.filter(spot => spot.location === null).length,
-            spots_with_coordinates: spotBlocks.map(spot => ({
-              block_id: spot.block_id,
-              query: spot.description,
-              location: spot.location,
-            })),
-            blocks: ctx.runtime.latestBlocks,
-            spot_blocks: spotBlocks,
+            resolved_count: sourceSpots.filter(spot => spot.location !== null).length,
+            unresolved_count: sourceSpots.filter(spot => spot.location === null).length,
+            resolved_spots: resolvedSpots,
+            spots_with_coordinates: resolvedSpots,
+            blocks: initialDerivedBlocks.blocks,
+            spot_blocks: initialDerivedBlocks.spot_blocks,
           };
           console.log('[resolve_spot_coordinates] skip-already-resolved', {
             durationMs: getDurationMs(startedAt),
@@ -107,7 +139,6 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
           return cachedResult;
         }
 
-        const sourceSpots = ctx.runtime.latestSpotBlocks;
         if (!sourceSpots || sourceSpots.length === 0) {
           ctx.runtime.spotCoordinatesResolved = true;
           const emptyResult = {
@@ -117,13 +148,15 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
             thumbnailUrl: videoMeta.thumbnailUrl,
             guideTitle: videoMeta.title,
             coverImageUrl: videoMeta.thumbnailUrl,
-            blockCount: ctx.runtime.latestBlocks.length,
+            session_analysis: ctx.runtime.latestSessionAnalysis,
+            blockCount: initialDerivedBlocks.blocks.length,
             spotCount: 0,
             spot_queries: [],
             resolved_count: 0,
             unresolved_count: 0,
+            resolved_spots: [],
             spots_with_coordinates: [],
-            blocks: ctx.runtime.latestBlocks,
+            blocks: initialDerivedBlocks.blocks,
             spot_blocks: [],
           };
           console.log('[resolve_spot_coordinates] skip-no-spot-blocks', {
@@ -227,16 +260,32 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
 
         const resolved = spotsWithCoordinates.filter(item => item.location !== null);
         const unresolved = spotsWithCoordinates.length - resolved.length;
-        const updatedBlocks = applySpotLocations(
-          ctx.runtime.latestBlocks,
-          spotsWithCoordinates.map(item => ({
-            block_id: item.block_id,
-            location: item.location,
-          })),
-        );
+        if (ctx.runtime.latestSessionAnalysis) {
+          ctx.runtime.latestSessionAnalysis = applySpotLocationsToSessionAnalysis(
+            ctx.runtime.latestSessionAnalysis,
+            spotsWithCoordinates.map(item => ({
+              spot_id: item.block_id,
+              location: item.location,
+            })),
+          );
+        }
+        const updatedDerivedBlocks = ctx.runtime.latestSessionAnalysis
+          ? buildLegacyBlockDataFromSessionAnalysis(ctx.runtime.latestSessionAnalysis)
+          : {
+              blocks: applySpotLocations(
+                ctx.runtime.latestBlocks,
+                spotsWithCoordinates.map(item => ({
+                  block_id: item.block_id,
+                  location: item.location,
+                })),
+              ),
+              spot_blocks: [] as typeof ctx.runtime.latestSpotBlocks,
+            };
 
-        ctx.runtime.latestBlocks = updatedBlocks;
-        ctx.runtime.latestSpotBlocks = getSpotBlocks(updatedBlocks);
+        ctx.runtime.latestBlocks = updatedDerivedBlocks.blocks;
+        ctx.runtime.latestSpotBlocks = ctx.runtime.latestSessionAnalysis
+          ? updatedDerivedBlocks.spot_blocks
+          : getSpotBlocks(updatedDerivedBlocks.blocks);
         ctx.runtime.spotCoordinatesResolved = true;
 
         console.log('[resolve_spot_coordinates] success', {
@@ -253,13 +302,15 @@ export function createResolveSpotCoordinatesTool(ctx: AgentToolContext) {
           thumbnailUrl: videoMeta.thumbnailUrl,
           guideTitle: videoMeta.title,
           coverImageUrl: videoMeta.thumbnailUrl,
-          blockCount: updatedBlocks.length,
+          session_analysis: ctx.runtime.latestSessionAnalysis,
+          blockCount: ctx.runtime.latestBlocks.length,
           spotCount: ctx.runtime.latestSpotBlocks.length,
           spot_queries: object.spot_queries,
           resolved_count: resolved.length,
           unresolved_count: unresolved,
+          resolved_spots: spotsWithCoordinates,
           spots_with_coordinates: spotsWithCoordinates,
-          blocks: updatedBlocks,
+          blocks: ctx.runtime.latestBlocks,
           spot_blocks: ctx.runtime.latestSpotBlocks,
         };
         console.log(

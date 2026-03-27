@@ -30,6 +30,8 @@ export interface SessionEditorSnapshot {
   centerViewMode: CenterViewMode;
   previewDevice: PreviewDevice;
   isSavingBlocks: boolean;
+  isHandbookManualEditorDirty: boolean;
+  isHandbookManualEditorSaving: boolean;
 }
 
 interface SessionEditorStoreState {
@@ -74,6 +76,8 @@ interface SessionEditorStoreState {
   ) => void;
   setCenterViewMode: (sessionId: string, mode: CenterViewMode) => void;
   setPreviewDevice: (sessionId: string, device: PreviewDevice) => void;
+  setHandbookManualEditorDirty: (sessionId: string, isDirty: boolean) => void;
+  setHandbookManualEditorSaving: (sessionId: string, isSaving: boolean) => void;
 }
 
 const EMPTY_SNAPSHOT: SessionEditorSnapshot = {
@@ -85,9 +89,11 @@ const EMPTY_SNAPSHOT: SessionEditorSnapshot = {
   handbookPreviewUrl: null,
   handbookStatus: 'idle',
   handbookError: null,
-  centerViewMode: 'blocks',
+  centerViewMode: 'html',
   previewDevice: 'desktop',
   isSavingBlocks: false,
+  isHandbookManualEditorDirty: false,
+  isHandbookManualEditorSaving: false,
 };
 
 const LEGACY_HANDBOOK_ID = '__legacy_handbook__';
@@ -102,9 +108,11 @@ function createEmptySnapshot(): SessionEditorSnapshot {
     handbookPreviewUrl: null,
     handbookStatus: 'idle',
     handbookError: null,
-    centerViewMode: 'blocks',
+    centerViewMode: 'html',
     previewDevice: 'desktop',
     isSavingBlocks: false,
+    isHandbookManualEditorDirty: false,
+    isHandbookManualEditorSaving: false,
   };
 }
 
@@ -157,6 +165,22 @@ function withProjectedActiveHandbook(snapshot: SessionEditorSnapshot): SessionEd
     handbookStatus: activeState?.status ?? 'idle',
     handbookError: activeState?.error ?? null,
   };
+}
+
+function shouldDefaultToHandbookView(
+  current: SessionEditorSnapshot,
+  incomingHandbookIds: string[],
+): boolean {
+  if (current.centerViewMode !== 'blocks') return false;
+  if (incomingHandbookIds.length === 0) return false;
+
+  const hasExistingHandbookProjection =
+    current.activeHandbookId !== null
+    || current.handbookHtml !== null
+    || current.handbookPreviewUrl !== null
+    || Object.keys(current.handbookStates).length > 0;
+
+  return !hasExistingHandbookProjection;
 }
 
 function upsertHandbookField(
@@ -303,9 +327,11 @@ const useSessionEditorZustandStore = create<SessionEditorStoreState>((set, get) 
       const nextStates: Record<string, HandbookPreviewState> = {
         ...current.handbookStates,
       };
+      const incomingHandbookIds: string[] = [];
 
       for (const handbook of payload.handbooks) {
         if (!handbook.handbookId) continue;
+        incomingHandbookIds.push(handbook.handbookId);
         const existing = nextStates[handbook.handbookId] ?? createEmptyHandbookState(handbook.handbookId);
         nextStates[handbook.handbookId] = {
           ...existing,
@@ -337,6 +363,9 @@ const useSessionEditorZustandStore = create<SessionEditorStoreState>((set, get) 
         ...current,
         activeHandbookId: nextActiveHandbookId,
         handbookStates: nextStates,
+        centerViewMode: shouldDefaultToHandbookView(current, incomingHandbookIds)
+          ? 'html'
+          : current.centerViewMode,
       });
 
       return {
@@ -485,6 +514,42 @@ const useSessionEditorZustandStore = create<SessionEditorStoreState>((set, get) 
       };
     });
   },
+
+  setHandbookManualEditorDirty(sessionId, isDirty) {
+    if (!sessionId) return;
+    set(state => {
+      const current = getOrCreateSnapshot(state, sessionId);
+      if (current.isHandbookManualEditorDirty === isDirty) return state;
+      return {
+        ...state,
+        bySessionId: {
+          ...state.bySessionId,
+          [sessionId]: {
+            ...current,
+            isHandbookManualEditorDirty: isDirty,
+          },
+        },
+      };
+    });
+  },
+
+  setHandbookManualEditorSaving(sessionId, isSaving) {
+    if (!sessionId) return;
+    set(state => {
+      const current = getOrCreateSnapshot(state, sessionId);
+      if (current.isHandbookManualEditorSaving === isSaving) return state;
+      return {
+        ...state,
+        bySessionId: {
+          ...state.bySessionId,
+          [sessionId]: {
+            ...current,
+            isHandbookManualEditorSaving: isSaving,
+          },
+        },
+      };
+    });
+  },
 }));
 
 export const sessionEditorActions = {
@@ -547,6 +612,10 @@ export const sessionEditorActions = {
     useSessionEditorZustandStore.getState().setCenterViewMode(sessionId, mode),
   setPreviewDevice: (sessionId: string, device: PreviewDevice) =>
     useSessionEditorZustandStore.getState().setPreviewDevice(sessionId, device),
+  setHandbookManualEditorDirty: (sessionId: string, isDirty: boolean) =>
+    useSessionEditorZustandStore.getState().setHandbookManualEditorDirty(sessionId, isDirty),
+  setHandbookManualEditorSaving: (sessionId: string, isSaving: boolean) =>
+    useSessionEditorZustandStore.getState().setHandbookManualEditorSaving(sessionId, isSaving),
 };
 
 export function useSessionEditorSnapshot(sessionId: string): SessionEditorSnapshot {

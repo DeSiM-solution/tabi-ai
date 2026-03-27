@@ -15,7 +15,10 @@ export function useUnsavedGuard({
   router,
   resetKey,
 }: UseUnsavedGuardArgs) {
-  const [isLeaveConfirmOpen, setIsLeaveConfirmOpen] = useState(false);
+  const [leaveConfirmState, setLeaveConfirmState] = useState({
+    isOpen: false,
+    resetKey,
+  });
   const isDirtyRef = useRef(isDirty);
   const allowUnsafeLeaveRef = useRef(false);
   const pendingLeaveActionRef = useRef<(() => void) | null>(null);
@@ -29,30 +32,41 @@ export function useUnsavedGuard({
     pendingLeaveActionRef.current = null;
     allowUnsafeLeaveRef.current = false;
     suppressNextPopStateRef.current = false;
-    setIsLeaveConfirmOpen(false);
   }, [resetKey]);
 
   const requestLeaveWithUnsavedWarning = useCallback((action: () => void) => {
     pendingLeaveActionRef.current = action;
-    setIsLeaveConfirmOpen(true);
-  }, []);
+    setLeaveConfirmState({
+      isOpen: true,
+      resetKey,
+    });
+  }, [resetKey]);
 
   const cancelLeaveWithUnsavedWarning = useCallback(() => {
     pendingLeaveActionRef.current = null;
-    setIsLeaveConfirmOpen(false);
-  }, []);
+    setLeaveConfirmState({
+      isOpen: false,
+      resetKey,
+    });
+  }, [resetKey]);
 
   const confirmLeaveWithUnsavedWarning = useCallback(() => {
     const action = pendingLeaveActionRef.current;
     pendingLeaveActionRef.current = null;
-    setIsLeaveConfirmOpen(false);
+    setLeaveConfirmState({
+      isOpen: false,
+      resetKey,
+    });
     allowUnsafeLeaveRef.current = true;
     action?.();
 
     window.setTimeout(() => {
       allowUnsafeLeaveRef.current = false;
     }, 1000);
-  }, []);
+  }, [resetKey]);
+
+  const isLeaveConfirmOpen =
+    leaveConfirmState.isOpen && leaveConfirmState.resetKey === resetKey;
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {

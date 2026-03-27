@@ -1,4 +1,5 @@
 import type { HandbookStyleId } from '@/lib/handbook-style';
+import type { SessionAnalysis } from '@/lib/session-analysis';
 import type {
   ApifyVideoResult,
   HandbookImageAsset,
@@ -15,6 +16,7 @@ export interface AgentRuntimeState {
   spotCoordinatesResolved: boolean;
   latestVideoContext: VideoContext | null;
   latestApifyVideos: ApifyVideoResult[];
+  latestSessionAnalysis: SessionAnalysis | null;
   latestHandbookStyle: HandbookStyleId | null;
   latestHandbookImages: HandbookImageAsset[];
   latestImageMode: 'search_image' | 'generate_image' | null;

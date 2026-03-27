@@ -16,6 +16,10 @@ import {
   formatSessionDate,
   resolveSessionTimeValue,
 } from '@/lib/session-time';
+import {
+  LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+  SESSION_ANALYSIS_TOOL_NAME,
+} from '@/lib/session-analysis-tool';
 
 export type SessionSummaryStatus =
   | 'idle'
@@ -167,14 +171,27 @@ function toNullableInputJson(
   return toInputJson(value);
 }
 
+function toMergedNullableInputJson(
+  currentValue: unknown,
+  nextValue: unknown | undefined,
+): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull | undefined {
+  if (nextValue === undefined) return undefined;
+  if (nextValue === null) return Prisma.JsonNull;
+  if (isRecord(currentValue) && isRecord(nextValue)) {
+    return toInputJson(mergeJsonValues(currentValue, nextValue));
+  }
+  return toInputJson(nextValue);
+}
+
 function formatStepLabel(step: SessionToolNameValue | null): string {
   if (!step) return 'idle';
-  if (step === 'parse_youtube_input') return 'Parse URL';
+  if (step === 'parse_youtube_input') return 'Parse Request';
   if (step === 'crawl_youtube_videos') return 'Crawl Video';
-  if (step === 'build_travel_blocks') return 'Build Blocks';
-  if (step === 'resolve_spot_coordinates') return 'Resolve Coordinates';
-  if (step === 'search_image') return 'Search Images';
-  if (step === 'generate_image') return 'Generate Images';
+  if (step === LEGACY_SESSION_ANALYSIS_TOOL_NAME) {
+    return 'Analyze Session Data';
+  }
+  if (step === 'resolve_spot_coordinates') return 'Resolve Spots';
+  if (step === 'search_image' || step === 'generate_image') return 'Prepare Media';
   return 'Generate Handbook';
 }
 
@@ -310,8 +327,10 @@ function extractThumbnailUrlFromToolOutputs(toolOutputs: unknown): string | null
   const resolvedThumbnail = readNonEmptyString(resolvedOutput?.thumbnailUrl);
   if (resolvedThumbnail) return resolvedThumbnail;
 
-  const blocksOutput = isRecord(toolOutputs.build_travel_blocks)
-    ? toolOutputs.build_travel_blocks
+  const blocksOutput = isRecord(toolOutputs[SESSION_ANALYSIS_TOOL_NAME])
+    ? toolOutputs[SESSION_ANALYSIS_TOOL_NAME]
+    : isRecord(toolOutputs[LEGACY_SESSION_ANALYSIS_TOOL_NAME])
+      ? toolOutputs[LEGACY_SESSION_ANALYSIS_TOOL_NAME]
     : null;
   return readNonEmptyString(blocksOutput?.thumbnailUrl);
 }
@@ -362,6 +381,10 @@ function sanitizeStateContextForClient(context: unknown): unknown {
     : Array.isArray(context.handbook_images)
       ? context.handbook_images
       : [];
+  const sessionAnalysis =
+    isRecord(context.sessionAnalysis) ? context.sessionAnalysis
+    : isRecord(context.session_analysis) ? context.session_analysis
+    : null;
   const handbookImages = rawHandbookImages
     .filter(isRecord)
     .map(image => {
@@ -388,6 +411,7 @@ function sanitizeStateContextForClient(context: unknown): unknown {
   return {
     video,
     apifyVideos,
+    sessionAnalysis,
     handbookStyle,
     handbookImages,
   };
@@ -1017,7 +1041,7 @@ export async function updateSessionHandbook(
       title: updates.title?.trim() || undefined,
       html: updates.html === undefined ? undefined : updates.html.trim(),
       previewPath: updates.previewPath === undefined ? undefined : updates.previewPath,
-      sourceContext: toNullableInputJson(updates.sourceContext),
+      sourceContext: toMergedNullableInputJson(existing.sourceContext, updates.sourceContext),
       sourceBlocks: toNullableInputJson(updates.sourceBlocks),
       sourceSpotBlocks: toNullableInputJson(updates.sourceSpotBlocks),
       sourceToolOutputs: toNullableInputJson(updates.sourceToolOutputs),

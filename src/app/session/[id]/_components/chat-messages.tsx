@@ -24,7 +24,6 @@ type ChatMessagesProps = {
   handbookStyle: HandbookStyleId | null;
   isRequestBusy: boolean;
   hasRenderableHandbook: boolean;
-  onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
 };
 
 export function ChatMessages({
@@ -37,7 +36,6 @@ export function ChatMessages({
   handbookStyle,
   isRequestBusy,
   hasRenderableHandbook,
-  onOpenEditor,
 }: ChatMessagesProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimationFrameRef = useRef<number | null>(null);
@@ -304,14 +302,13 @@ export function ChatMessages({
                   <MessageContent
                     message={message}
                     editedToolOutputs={editedToolOutputs}
-                    toolDurations={toolDurations}
-                    handbookStyle={handbookStyle}
-                    isRequestBusy={isRequestBusy}
-                    hasRenderableHandbook={hasRenderableHandbook}
-                    onOpenEditor={onOpenEditor}
-                  />
-                </div>
+                  toolDurations={toolDurations}
+                  handbookStyle={handbookStyle}
+                  isRequestBusy={isRequestBusy}
+                  hasRenderableHandbook={hasRenderableHandbook}
+                />
               </div>
+            </div>
             );
           })}
         </div>

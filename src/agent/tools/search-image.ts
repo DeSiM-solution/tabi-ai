@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { runStructuredTask } from '@/lib/model-management';
+import { buildLegacyBlockDataFromSessionAnalysis } from '@/lib/session-analysis';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, toErrorMessage } from '@/agent/context/utils';
 import { handbookSearchImagePlanPrompt } from '@/agent/prompts/image-query-planning';
@@ -86,10 +87,15 @@ export function createSearchImageTool(ctx: AgentToolContext) {
     execute: async ({ count }) =>
       ctx.runToolStep('search_image', { count: count ?? null }, async () => {
         const startedAt = Date.now();
-        const sourceBlocks = ctx.runtime.latestBlocks;
+        const sourceBlocks =
+          ctx.runtime.latestBlocks.length > 0
+            ? ctx.runtime.latestBlocks
+            : ctx.runtime.latestSessionAnalysis
+              ? buildLegacyBlockDataFromSessionAnalysis(ctx.runtime.latestSessionAnalysis).blocks
+              : [];
         if (!sourceBlocks || sourceBlocks.length === 0) {
           throw new Error(
-            'No blocks available for image search. Run build_travel_blocks first.',
+            'No analyzed session sections available for image search. Run Analyze Session Data first.',
           );
         }
 

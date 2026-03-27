@@ -245,7 +245,7 @@ export function useToolOutputListener({
         }
 
         sessionEditorActions.setEditorSession(sessionId, nextEditorSession);
-        sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
+        sessionEditorActions.setCenterViewMode(sessionId, 'html');
         autoOpenedEditableSourceRef.current.add(sourceKey);
         return;
       }

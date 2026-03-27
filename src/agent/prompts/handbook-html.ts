@@ -4,6 +4,7 @@ import type {
   TravelBlock,
   VideoContext,
 } from '@/agent/tools/types';
+import type { SessionAnalysis } from '@/lib/session-analysis';
 
 export type HandbookPromptImageAsset = Pick<
   HandbookImageAsset,
@@ -20,7 +21,10 @@ export function handbookHtmlSystemPrompt(options: {
     'Do not use markdown code fences.',
     'Output must start with <!doctype html> and include <html>, <head>, <body>.',
     'Use semantic sections, responsive layout, and clean typography.',
-    'Render all travel spots from the input blocks.',
+    'Render the handbook from the provided session analysis and section summaries.',
+    'Render all travel spots from the input session_analysis.spots data.',
+    'For every rendered spot section, include data-spot-id="<spot_id>" using the exact spot_id from input session_analysis.spots.',
+    'Only use spot ids from the provided available_spot_ids list; never invent spot ids.',
     'Use only provided handbook_images[].image_url values for images.',
     'Do not invent new image URLs.',
     'Each block section should render its matched image when available.',
@@ -50,6 +54,7 @@ export function handbookHtmlPrompt(options: {
   title: string;
   videoContext: VideoContext | null;
   thumbnailUrl: string | null;
+  sessionAnalysis: SessionAnalysis | null;
   blocks: TravelBlock[];
   blocksWithImages: Array<TravelBlock & { image: HandbookPromptImageAsset | null }>;
   spotBlocks: SpotBlock[];
@@ -64,6 +69,7 @@ export function handbookHtmlPrompt(options: {
     title,
     videoContext,
     thumbnailUrl,
+    sessionAnalysis,
     blocks,
     blocksWithImages,
     spotBlocks,
@@ -74,6 +80,9 @@ export function handbookHtmlPrompt(options: {
     handbookStyleInstruction,
     escapedUrl,
   } = options;
+  const availableSpotIds = sessionAnalysis?.spots.length
+    ? sessionAnalysis.spots.map(spot => spot.spot_id)
+    : spotBlocks.map(spot => spot.block_id);
 
   return [
     'Generate a polished travel handbook HTML page from this JSON input.',
@@ -94,6 +103,8 @@ export function handbookHtmlPrompt(options: {
         handbookStyleLabel,
         handbookStyleInstruction,
         escapedUrl,
+        available_spot_ids: availableSpotIds,
+        session_analysis: sessionAnalysis,
         blocks,
         blocks_with_images: blocksWithImages,
         spot_blocks: spotBlocks,

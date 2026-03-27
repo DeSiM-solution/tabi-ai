@@ -75,14 +75,14 @@ export async function generateHandbookFromEditor({
   resetHtmlPreviewLoadPhase,
   pendingToolbarGenerationRef,
 }: GenerateHandbookFromEditorArgs): Promise<void> {
-  if (!requireLogin('Manual HTML generation requires an account login.')) return;
+  if (!requireLogin('Handbook remix requires an account login.')) return;
   if (!sessionId) return;
   if (isBusy) return;
 
   const nextOutput = applyEditorSession(session);
   const blocks = Array.isArray(nextOutput.blocks) ? nextOutput.blocks : [];
   if (blocks.length === 0) {
-    alert('Please add at least one block before generating handbook HTML.');
+    alert('Please add at least one block before remixing the handbook.');
     return;
   }
 
@@ -100,7 +100,7 @@ export async function generateHandbookFromEditor({
   );
   const synced = await persistEditorOutput(session, nextOutput);
   if (!synced) {
-    toast.error('Failed to sync blocks before generating handbook.');
+    toast.error('Failed to sync session data before remixing the handbook.');
     return;
   }
 
@@ -119,6 +119,7 @@ export async function generateHandbookFromEditor({
       previewPath: null,
       sourceContext: {
         handbookGenerationStatus: 'pending',
+        generationKind: 'remix',
       },
       style: styleId,
       thumbnailUrl: session.thumbnailUrl ?? null,
@@ -127,11 +128,11 @@ export async function generateHandbookFromEditor({
     persistedPendingHandbookId = placeholderHandbook?.id ?? null;
   } catch (error) {
     console.error('[chat-ui] create-generating-placeholder-failed', error);
-    toast.error('Failed to prepare generating handbook version.');
+    toast.error('Failed to prepare the remix draft.');
     return;
   }
   if (!persistedPendingHandbookId) {
-    toast.error('Failed to prepare generating handbook version.');
+    toast.error('Failed to prepare the remix draft.');
     return;
   }
 
@@ -179,10 +180,11 @@ export async function generateHandbookFromEditor({
   };
   const prompt = [
     MANUAL_HANDBOOK_PROMPT_PREFIX,
+    'Create a brand-new handbook artifact for this remix.',
     'Use the latest session state as handbook input (blocks/spot_blocks/tool_outputs).',
     'Do not inline blocks/images in tool input.',
     'If prepared images are missing, call exactly one image tool first, then generate_handbook_html once.',
-    'Do not call parse_youtube_input, crawl_youtube_videos, build_travel_blocks, or resolve_spot_coordinates.',
+    'Do not call parse_youtube_input, crawl_youtube_videos, analyze_session_data, build_travel_blocks, or resolve_spot_coordinates.',
     `Use handbook style: ${styleLabel}.`,
     styleInstruction
       ? `Style direction: ${styleInstruction}`

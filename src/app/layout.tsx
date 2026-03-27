@@ -9,8 +9,8 @@ import {
 } from "next/font/google";
 import { Toaster } from "sonner";
 import { UtmTracker } from "@/components/utm-tracker";
+import 'react-beautiful-color/dist/react-beautiful-color.css';
 import "./globals.css";
-
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],

@@ -108,7 +108,7 @@ export function HandbookVersionMenu({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12px] font-medium text-text-primary">
-                      {handbook.title || 'Untitled guide'}
+                      {handbook.title || 'Untitled handbook'}
                     </span>
                     <span className="block truncate text-[11px] text-text-secondary">
                       {handbook.isGenerating

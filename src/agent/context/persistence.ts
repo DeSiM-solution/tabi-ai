@@ -8,6 +8,11 @@ import {
   normalizeHandbookStyle,
   type HandbookStyleId,
 } from '@/lib/handbook-style';
+import {
+  buildLegacyBlockDataFromSessionAnalysis,
+  parseSessionAnalysis,
+  type SessionAnalysis,
+} from '@/lib/session-analysis';
 import { isRecord } from '@/agent/context/utils';
 import type { AgentRuntimeState } from '@/agent/context/types';
 import {
@@ -79,6 +84,7 @@ function parsePersistedHandbookImages(value: unknown): HandbookImageAsset[] {
 export function parsePersistedContext(value: unknown): {
   videoContext: VideoContext | null;
   apifyVideos: ApifyVideoResult[];
+  sessionAnalysis: SessionAnalysis | null;
   handbookStyle: HandbookStyleId | null;
   handbookImages: HandbookImageAsset[];
   conversationSummary: string | null;
@@ -87,6 +93,7 @@ export function parsePersistedContext(value: unknown): {
     return {
       videoContext: null,
       apifyVideos: [],
+      sessionAnalysis: null,
       handbookStyle: null,
       handbookImages: [],
       conversationSummary: null,
@@ -96,6 +103,9 @@ export function parsePersistedContext(value: unknown): {
   const videoFromNested = normalizeVideoContext(value.video);
   const videoFromRoot = normalizeVideoContext(value);
   const apifyVideos = normalizeApifyVideos(value.apifyVideos ?? value.apify_videos);
+  const sessionAnalysis = parseSessionAnalysis(
+    value.sessionAnalysis ?? value.session_analysis,
+  );
   const handbookStyleFromRoot = normalizeHandbookStyle(value.handbookStyle);
   const handbookStyleFromVideo = isRecord(value.video)
     ? normalizeHandbookStyle(value.video.handbookStyle)
@@ -117,6 +127,7 @@ export function parsePersistedContext(value: unknown): {
   return {
     videoContext: videoFromNested ?? videoFromRoot,
     apifyVideos,
+    sessionAnalysis,
     handbookStyle: handbookStyleFromRoot ?? handbookStyleFromVideo,
     handbookImages,
     conversationSummary: normalizedConversationSummary,
@@ -126,6 +137,7 @@ export function parsePersistedContext(value: unknown): {
 export function buildPersistedContext(
   videoContext: VideoContext | null,
   apifyVideos: ApifyVideoResult[],
+  sessionAnalysis: SessionAnalysis | null,
   handbookStyle: HandbookStyleId | null,
   handbookImages: HandbookImageAsset[],
   conversationSummary: string | null,
@@ -137,6 +149,7 @@ export function buildPersistedContext(
   if (
     !videoContext &&
     apifyVideos.length === 0 &&
+    !sessionAnalysis &&
     !handbookStyle &&
     handbookImages.length === 0 &&
     !normalizedConversationSummary
@@ -147,6 +160,7 @@ export function buildPersistedContext(
   return {
     video: videoContext,
     apifyVideos,
+    sessionAnalysis,
     handbookStyle,
     handbookImages,
     conversationSummary: normalizedConversationSummary,
@@ -163,19 +177,33 @@ export async function hydrateRuntimeState(
 
   runtime.latestBlocks = parsePersistedTravelBlocks(persistedState.blocks);
   runtime.latestSpotBlocks = parsePersistedSpotBlocks(persistedState.spotBlocks);
-  if (runtime.latestSpotBlocks.length === 0 && runtime.latestBlocks.length > 0) {
-    runtime.latestSpotBlocks = getSpotBlocks(runtime.latestBlocks);
-  }
-  runtime.spotCoordinatesResolved =
-    runtime.latestSpotBlocks.length === 0
-      ? true
-      : runtime.latestSpotBlocks.every(spot => spot.location !== null);
-
   const parsedContext = parsePersistedContext(persistedState.context);
   runtime.latestVideoContext = parsedContext.videoContext;
   runtime.latestApifyVideos = parsedContext.apifyVideos;
+  runtime.latestSessionAnalysis = parsedContext.sessionAnalysis;
   runtime.latestHandbookStyle = parsedContext.handbookStyle;
   runtime.latestConversationSummary = parsedContext.conversationSummary;
+
+  if (runtime.latestBlocks.length === 0 && runtime.latestSessionAnalysis) {
+    runtime.latestBlocks = buildLegacyBlockDataFromSessionAnalysis(
+      runtime.latestSessionAnalysis,
+    ).blocks;
+  }
+  if (runtime.latestSpotBlocks.length === 0) {
+    if (runtime.latestSessionAnalysis) {
+      runtime.latestSpotBlocks = buildLegacyBlockDataFromSessionAnalysis(
+        runtime.latestSessionAnalysis,
+      ).spot_blocks;
+    } else if (runtime.latestBlocks.length > 0) {
+      runtime.latestSpotBlocks = getSpotBlocks(runtime.latestBlocks);
+    }
+  }
+  runtime.spotCoordinatesResolved =
+    runtime.latestSessionAnalysis
+      ? runtime.latestSessionAnalysis.spots.every(spot => spot.location !== null)
+      : runtime.latestSpotBlocks.length === 0
+        ? true
+        : runtime.latestSpotBlocks.every(spot => spot.location !== null);
 
   Object.assign(runtime.latestToolOutputs, parsePersistedToolOutputs(persistedState.toolOutputs));
   const persistedSearchImages = extractPersistedHandbookImages(
@@ -233,6 +261,7 @@ export async function persistSessionSnapshot(
     context: buildPersistedContext(
       runtime.latestVideoContext,
       runtime.latestApifyVideos,
+      runtime.latestSessionAnalysis,
       runtime.latestHandbookStyle,
       runtime.latestHandbookImages,
       runtime.latestConversationSummary,

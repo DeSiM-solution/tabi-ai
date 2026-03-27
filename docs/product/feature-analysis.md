@@ -213,11 +213,13 @@ IDLE → RUNNING → COMPLETED
 ```
 1. parse_youtube_input     → 提取 YouTube URL
 2. crawl_youtube_videos    → 抓取视频数据
-3. build_travel_blocks     → 生成旅行内容块
+3. analyze_session_data    → 生成 Session Analysis（sections / spots / remix hints）
 4. resolve_spot_coordinates → 地理编码
 5. search_image / generate_image → 图片处理
 6. generate_handbook_html  → 生成 HTML 手册
 ```
+
+注：数据库内部持久化仍兼容旧 key `build_travel_blocks`，但 2.0 对模型与前端显示统一使用 `analyze_session_data`。
 
 系统通过 System Prompt 强制执行顺序，防止工具乱序调用。最大执行步数：9 步。
 

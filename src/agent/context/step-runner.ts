@@ -5,6 +5,11 @@ import {
   failSessionStep,
 } from '@/server/events';
 import { getSessionStatus } from '@/server/sessions';
+import {
+  LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+  SESSION_ANALYSIS_TOOL_NAME,
+} from '@/lib/session-analysis-tool';
+import type { SessionToolNameValue } from '@/lib/session-enums';
 import type { AgentRuntimeState } from './types';
 import { isAbortError, getDurationMs, toErrorMessage } from './utils';
 import { persistSessionSnapshot } from './persistence';
@@ -16,6 +21,15 @@ export function createRunToolStep(options: {
   runtime: AgentRuntimeState;
 }) {
   const { sessionId, userId, runtime } = options;
+
+  const toPersistedSessionStepToolName = (
+    toolName: PersistedToolName,
+  ): SessionToolNameValue => {
+    if (toolName === SESSION_ANALYSIS_TOOL_NAME) {
+      return LEGACY_SESSION_ANALYSIS_TOOL_NAME;
+    }
+    return toolName as SessionToolNameValue;
+  };
 
   return async function runToolStep<T>(
     toolName: PersistedToolName,
@@ -37,10 +51,11 @@ export function createRunToolStep(options: {
     const startedAt = Date.now();
     runtime.requestToolStatus[toolName] = 'running';
     delete runtime.requestToolErrors[toolName];
+    const persistedStepToolName = toPersistedSessionStepToolName(toolName);
     const stepId = await createSessionStep({
       sessionId,
       userId,
-      toolName,
+      toolName: persistedStepToolName,
       payload: input,
     });
 
@@ -86,7 +101,7 @@ export function createRunToolStep(options: {
           stepId,
           sessionId,
           userId,
-          toolName,
+          toolName: persistedStepToolName,
           errorMessage,
           durationMs: getDurationMs(startedAt),
         });

@@ -1,22 +1,29 @@
 import type { RefObject } from 'react';
 import { LuRefreshCw } from 'react-icons/lu';
 
+import type {
+  HandbookSelectionSnapshot,
+  HandbookStyleProperty,
+} from '../_lib/handbook-selection';
 import type { HandbookStatus } from '../_stores/session-editor-store';
 
+import { HandbookManualEditor } from './handbook-manual-editor';
 import { HandbookVersionMenu, type HandbookVersionMenuItem } from './handbook-version-menu';
 
 type SessionHtmlPanelProps = {
   isSessionHydrating: boolean;
-  previewFrameWidth: number;
+  previewFrameWidth: string;
   previewFrameMaxHeight: string;
   previewFrameOpacityClass: string;
   showNewHandbookLoadingState: boolean;
+  showProcessingState: boolean;
   showHtmlPreviewOverlay: boolean;
   htmlPreviewLoadPhase: 'idle' | 'loading' | 'revealing';
   handbookPreviewUrl: string | null;
   handbookHtml: string | null;
   handbookStatus: HandbookStatus;
   handbookError: string | null;
+  sessionImageUrls: string[];
   onHtmlPreviewLoad: () => void;
   handbookVersionMenuItems: HandbookVersionMenuItem[];
   activeHandbookId: string | null;
@@ -25,9 +32,18 @@ type SessionHtmlPanelProps = {
   isVersionMenuOpen: boolean;
   isRemovingHandbookVersion: boolean;
   versionMenuRef: RefObject<HTMLDivElement | null>;
+  isManualEditorAvailable: boolean;
+  isManualEditorLoading: boolean;
+  manualEditorHtml: string;
   onToggleVersionMenu: () => void;
   onSelectHandbook: (handbook: HandbookVersionMenuItem) => void;
   onRequestDeleteHandbook: (handbookId: string) => void;
+  onChangeManualEditorHtml: (nextHtml: string) => void;
+  onVisualEditorReadyChange?: (isReady: boolean) => void;
+  onVisualSelectionChange?: (selection: HandbookSelectionSnapshot | null) => void;
+  onVisualApplyStyleReady?: (
+    applyStyle: ((property: HandbookStyleProperty, value: string) => boolean) | null,
+  ) => void;
 };
 
 export function SessionHtmlPanel({
@@ -36,12 +52,14 @@ export function SessionHtmlPanel({
   previewFrameMaxHeight,
   previewFrameOpacityClass,
   showNewHandbookLoadingState,
+  showProcessingState,
   showHtmlPreviewOverlay,
   htmlPreviewLoadPhase,
   handbookPreviewUrl,
   handbookHtml,
   handbookStatus,
   handbookError,
+  sessionImageUrls,
   onHtmlPreviewLoad,
   handbookVersionMenuItems,
   activeHandbookId,
@@ -50,16 +68,23 @@ export function SessionHtmlPanel({
   isVersionMenuOpen,
   isRemovingHandbookVersion,
   versionMenuRef,
+  isManualEditorAvailable,
+  isManualEditorLoading,
+  manualEditorHtml,
   onToggleVersionMenu,
   onSelectHandbook,
   onRequestDeleteHandbook,
+  onChangeManualEditorHtml,
+  onVisualEditorReadyChange,
+  onVisualSelectionChange,
+  onVisualApplyStyleReady,
 }: SessionHtmlPanelProps) {
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-bg-primary px-6 pt-0">
+    <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-bg-primary p-4">
       <div
-        className="relative h-full overflow-hidden rounded-[12px] border border-border-light bg-bg-elevated transition-[width,max-height] duration-200"
+        className="relative h-full overflow-hidden rounded-[14px] border border-border-light bg-bg-elevated transition-[width,max-height] duration-200"
         style={{
-          width: `min(100%, ${previewFrameWidth}px)`,
+          width: previewFrameWidth,
           maxWidth: '100%',
           maxHeight: previewFrameMaxHeight,
         }}
@@ -70,23 +95,37 @@ export function SessionHtmlPanel({
             <span className="h-3 w-3 rounded-full bg-amber-400" />
             <span className="h-3 w-3 rounded-full bg-emerald-500" />
           </div>
-          <HandbookVersionMenu
-            previewAddress={previewAddress}
-            items={handbookVersionMenuItems}
-            activeHandbookId={activeHandbookId}
-            activeHandbook={activeHandbook}
-            isOpen={isVersionMenuOpen}
-            isSessionHydrating={isSessionHydrating}
-            isRemovingHandbookVersion={isRemovingHandbookVersion}
-            versionMenuRef={versionMenuRef}
-            onToggleOpen={onToggleVersionMenu}
-            onSelectHandbook={onSelectHandbook}
-            onRequestDelete={onRequestDeleteHandbook}
-          />
+          <div className="min-w-0 flex-1">
+            <HandbookVersionMenu
+              previewAddress={previewAddress}
+              items={handbookVersionMenuItems}
+              activeHandbookId={activeHandbookId}
+              activeHandbook={activeHandbook}
+              isOpen={isVersionMenuOpen}
+              isSessionHydrating={isSessionHydrating}
+              isRemovingHandbookVersion={isRemovingHandbookVersion}
+              versionMenuRef={versionMenuRef}
+              onToggleOpen={onToggleVersionMenu}
+              onSelectHandbook={onSelectHandbook}
+              onRequestDelete={onRequestDeleteHandbook}
+            />
+          </div>
         </div>
 
         <div className="relative h-[calc(100%-40px)] overflow-hidden bg-bg-elevated">
-          {!showNewHandbookLoadingState && handbookPreviewUrl && (
+          {isManualEditorAvailable && (
+            <HandbookManualEditor
+              draftHtml={manualEditorHtml}
+              sessionImageUrls={sessionImageUrls}
+              isLoading={isManualEditorLoading}
+              onChange={onChangeManualEditorHtml}
+              onVisualEditorReadyChange={onVisualEditorReadyChange}
+              onVisualSelectionChange={onVisualSelectionChange}
+              onVisualApplyStyleReady={onVisualApplyStyleReady}
+            />
+          )}
+
+          {!isManualEditorAvailable && !showNewHandbookLoadingState && handbookPreviewUrl && (
             <iframe
               title="Guide Preview"
               src={handbookPreviewUrl}
@@ -96,7 +135,7 @@ export function SessionHtmlPanel({
             />
           )}
 
-          {!showNewHandbookLoadingState && !handbookPreviewUrl && handbookHtml && (
+          {!isManualEditorAvailable && !showNewHandbookLoadingState && !handbookPreviewUrl && handbookHtml && (
             <iframe
               title="Guide Preview"
               srcDoc={handbookHtml}
@@ -116,7 +155,18 @@ export function SessionHtmlPanel({
             </div>
           )}
 
-          {showHtmlPreviewOverlay && (
+          {!showNewHandbookLoadingState && showProcessingState && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white">
+              <div className="flex flex-col items-center gap-2">
+                <LuRefreshCw className="h-7 w-7 animate-spin text-accent-primary" />
+                <p className="text-[13px] font-medium text-text-secondary">
+                  Generating handbook
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!isManualEditorAvailable && showHtmlPreviewOverlay && (
             <div
               className={`absolute inset-0 z-10 flex items-center justify-center transition-[background-color] duration-500 ${
                 htmlPreviewLoadPhase === 'loading'
@@ -138,6 +188,7 @@ export function SessionHtmlPanel({
           )}
 
           {!showNewHandbookLoadingState &&
+            !showProcessingState &&
             !handbookPreviewUrl &&
             !handbookHtml &&
             handbookStatus === 'generating' && (
@@ -154,7 +205,7 @@ export function SessionHtmlPanel({
           {!handbookHtml && handbookStatus === 'error' && (
             <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
               <p className="max-w-lg text-sm font-medium text-status-error">
-                {handbookError || 'Failed to generate guide HTML.'}
+                {handbookError || 'Failed to load handbook HTML.'}
               </p>
             </div>
           )}
@@ -162,11 +213,12 @@ export function SessionHtmlPanel({
           {!handbookPreviewUrl &&
             !handbookHtml &&
             handbookStatus !== 'generating' &&
+            !showProcessingState &&
             handbookStatus !== 'error' && (
               <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
                 <p className="max-w-lg text-sm font-medium text-text-tertiary">
-                  No guide HTML yet. Generate once, then switch between HTML and
-                  blocks without regenerating.
+                  No handbook yet. Start a generation and the visual editor will attach
+                  automatically when the handbook is ready.
                 </p>
               </div>
             )}

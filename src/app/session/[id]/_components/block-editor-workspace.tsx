@@ -89,7 +89,7 @@ const BLOCK_TYPE_META: Record<
   other: {
     label: 'Extra',
     icon: FiStar,
-    descriptionPlaceholder: 'Add any helpful travel note for this block.',
+    descriptionPlaceholder: 'Add any helpful travel note for this section.',
     iconToneClassName: 'border-slate-200 bg-slate-100 text-slate-600',
     railClassName: 'bg-slate-100 text-slate-700',
   },
@@ -284,7 +284,7 @@ export function BlockEditorWorkspace({
     return {
       block_id: createBlockId(),
       type: 'spot',
-      title: `Block ${nextIndex}`,
+      title: `Section ${nextIndex}`,
       description: '',
       smart_tags: [],
       latInput: '',
@@ -459,7 +459,7 @@ export function BlockEditorWorkspace({
   };
 
   const commitTitle = (index: number, rawText: string) => {
-    const nextTitle = rawText.trim() || `Block ${index + 1}`;
+    const nextTitle = rawText.trim() || `Section ${index + 1}`;
     updateBlock(index, current => ({
       ...current,
       title: nextTitle,
@@ -583,7 +583,7 @@ export function BlockEditorWorkspace({
         ) : null}
         <div className="relative">
           <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-text-primary">
-            Plan Blocks Like A Traveler
+            Refine Session Data Like A Traveler
           </h2>
           <div className="mt-3 flex flex-col gap-2.5 rounded-[12px] border border-border-light bg-bg-elevated p-3">
             <div className="space-y-1">
@@ -648,14 +648,14 @@ export function BlockEditorWorkspace({
       >
         <p className="mb-1.5 px-0.5 text-[12px] text-text-secondary">
           {session.blocks.length === 0
-            ? 'No blocks yet'
-            : `${session.blocks.length} block${session.blocks.length > 1 ? 's' : ''} in this guide`}
+            ? 'No sections yet'
+            : `${session.blocks.length} section${session.blocks.length > 1 ? 's' : ''} in this guide`}
         </p>
 
         {session.blocks.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-border-default bg-bg-elevated p-8 text-center">
             <p className="text-[14px] font-medium text-text-secondary">
-              Start by adding your first block.
+              Start by adding your first section.
             </p>
             <p className="mt-1 text-[12px] text-text-tertiary">
               You can describe a restaurant, attraction, transport tip, or shopping place.
@@ -663,13 +663,13 @@ export function BlockEditorWorkspace({
             <button
               type="button"
               onClick={() => insertBlockAt(0)}
-              data-tooltip="Add first block"
+              data-tooltip="Add first section"
               className={withTooltip(
                 'mt-4 inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-accent-primary px-3.5 text-[12px] font-semibold text-text-inverse transition hover:brightness-95',
               )}
             >
               <FiPlus className="h-3.5 w-3.5" />
-              Add first block
+              Add first section
             </button>
           </div>
         ) : (
@@ -679,8 +679,8 @@ export function BlockEditorWorkspace({
               <button
                 type="button"
                 onClick={() => insertBlockAt(0)}
-                data-tooltip="Add block before first block"
-                aria-label="add block before first block"
+                data-tooltip="Add section before the first section"
+                aria-label="add section before the first section"
                 className={withTooltip(
                   'absolute left-1/2 -translate-x-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-tertiary opacity-0 shadow-[0_6px_18px_rgba(45,42,38,0.16)] transition-all duration-150 hover:border-accent-primary hover:text-accent-primary group-hover:opacity-100 focus-visible:opacity-100',
                 )}
@@ -753,7 +753,7 @@ export function BlockEditorWorkspace({
                         onDragStart={event => handleDragStart(event, block.block_id)}
                         onDragEnd={handleDragEnd}
                         data-tooltip="Drag to move, click for tools"
-                        aria-label={`open block ${index + 1} tools`}
+                        aria-label={`open section ${index + 1} tools`}
                         className={withTooltip(
                           `absolute -left-3 top-10 inline-flex h-6 w-5 items-center justify-center rounded-[7px] border border-border-light bg-bg-elevated text-text-tertiary shadow-[0_2px_8px_rgba(15,23,42,0.12)] transition ${
                             showToolbarTrigger
@@ -774,7 +774,7 @@ export function BlockEditorWorkspace({
                             previous === block.block_id ? null : block.block_id,
                           );
                         }}
-                        aria-label={`choose category for block ${index + 1}`}
+                        aria-label={`choose category for section ${index + 1}`}
                         className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${typeMeta.iconToneClassName}`}
                       >
                         <TypeIcon className="h-3.5 w-3.5" />
@@ -833,7 +833,7 @@ export function BlockEditorWorkspace({
                         }}
                         className="cursor-text rounded-[10px] px-2 py-1 text-[24px] font-semibold leading-[1.25] tracking-[-0.02em] text-text-primary outline-none transition hover:bg-bg-secondary/70 focus:bg-bg-secondary md:text-[26px]"
                       >
-                        {block.title.trim() || `Block ${index + 1}`}
+                        {block.title.trim() || `Section ${index + 1}`}
                       </h3>
 
                       <div
@@ -865,7 +865,7 @@ export function BlockEditorWorkspace({
                       {isActive ? (
                         <div className="mt-2 space-y-1">
                           <div className="text-[11px] font-medium text-text-tertiary">
-                            Block Image URL (Optional)
+                            Section Image URL (Optional)
                           </div>
                           <input
                             value={block.imageUrl}
@@ -1073,8 +1073,8 @@ export function BlockEditorWorkspace({
                       <button
                         type="button"
                         onClick={() => insertBlockAt(index + 1)}
-                        data-tooltip={`Add block between ${index + 1} and ${index + 2}`}
-                        aria-label={`add block between block ${index + 1} and ${index + 2}`}
+                        data-tooltip={`Add section between ${index + 1} and ${index + 2}`}
+                        aria-label={`add section between section ${index + 1} and ${index + 2}`}
                         className={withTooltip(
                           'absolute left-1/2 -translate-x-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-tertiary opacity-0 shadow-[0_6px_18px_rgba(45,42,38,0.16)] transition-all duration-150 hover:border-accent-primary hover:text-accent-primary group-hover:opacity-100 focus-visible:opacity-100',
                         )}
@@ -1091,8 +1091,8 @@ export function BlockEditorWorkspace({
               <button
                 type="button"
                 onClick={() => insertBlockAt(session.blocks.length)}
-                data-tooltip="Add block after last block"
-                aria-label="add block after last block"
+                data-tooltip="Add section after the last section"
+                aria-label="add section after the last section"
                 className={withTooltip(
                   'absolute left-1/2 -translate-x-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border-default bg-bg-elevated text-text-tertiary opacity-0 shadow-[0_6px_18px_rgba(45,42,38,0.16)] transition-all duration-150 hover:border-accent-primary hover:text-accent-primary group-hover:opacity-100 focus-visible:opacity-100',
                 )}
@@ -1117,7 +1117,7 @@ export function BlockEditorWorkspace({
                 left: `${toolbarPosition.left}px`,
               }}
               role="toolbar"
-              aria-label="block actions"
+              aria-label="section actions"
             >
               <button
                 type="button"
@@ -1126,8 +1126,8 @@ export function BlockEditorWorkspace({
                   moveBlock(toolbarBlockIndex, -1);
                 }}
                 disabled={toolbarBlockIndex === 0}
-                data-tooltip="Move block up"
-                aria-label="move block up"
+                data-tooltip="Move section up"
+                aria-label="move section up"
                 className={withTooltip(
                   'inline-flex h-7 w-7 items-center justify-center rounded-[7px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35',
                 )}
@@ -1141,8 +1141,8 @@ export function BlockEditorWorkspace({
                   moveBlock(toolbarBlockIndex, 1);
                 }}
                 disabled={toolbarBlockIndex === session.blocks.length - 1}
-                data-tooltip="Move block down"
-                aria-label="move block down"
+                data-tooltip="Move section down"
+                aria-label="move section down"
                 className={withTooltip(
                   'inline-flex h-7 w-7 items-center justify-center rounded-[7px] text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35',
                 )}
@@ -1158,8 +1158,8 @@ export function BlockEditorWorkspace({
                   if (!targetBlock) return;
                   setPendingDeleteBlockId(targetBlock.block_id);
                 }}
-                data-tooltip="Delete block"
-                aria-label="delete block"
+                data-tooltip="Delete section"
+                aria-label="delete section"
                 className={withTooltip(
                   'inline-flex h-7 w-7 items-center justify-center rounded-[7px] text-status-error transition hover:bg-status-error/10 hover:text-status-error',
                 )}
@@ -1173,8 +1173,8 @@ export function BlockEditorWorkspace({
 
       <DeleteConfirmationDialog
         open={Boolean(pendingDeleteBlock)}
-        title="Delete Block?"
-        description="Are you sure you want to delete this block?"
+        title="Delete Section?"
+        description="Are you sure you want to delete this section?"
         confirmLabel="Delete"
         onCancel={() => setPendingDeleteBlockId(null)}
         onConfirm={confirmDeleteBlock}
@@ -1189,7 +1189,7 @@ export function BlockEditorWorkspace({
           <div className="flex items-center gap-2 rounded-[12px] border border-border-light bg-bg-elevated px-4 py-2 shadow-[0_8px_24px_rgba(45,42,38,0.12)]">
             <LuLoaderCircle className="h-4 w-4 animate-spin text-accent-primary" />
             <span className="text-[13px] font-medium text-text-secondary">
-              Saving blocks...
+              Saving session data...
             </span>
           </div>
         </div>

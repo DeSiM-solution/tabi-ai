@@ -1,5 +1,11 @@
 import type { UIMessage } from 'ai';
 import { nanoid } from 'nanoid';
+import { isHandbookRemixPromptText } from '../../../../lib/handbook-remix.ts';
+import {
+  buildLegacyBlockDataFromSessionAnalysis,
+  parseSessionAnalysis,
+} from '../../../../lib/session-analysis.ts';
+import { isSessionAnalysisToolName } from '../../../../lib/session-analysis-tool.ts';
 
 export const DEFAULT_VIDEO_URL = '';
 export const BLOCK_TYPES = ['food', 'spot', 'transport', 'shopping', 'other'] as const;
@@ -76,8 +82,6 @@ type BlockImageDraft = {
 };
 
 export type EditedOutputs = Record<string, UnknownRecord>;
-
-const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
 
 export function createBlockId(): string {
   return nanoid(8);
@@ -372,7 +376,7 @@ export function applyEditorSession(session: EditorSession): UnknownRecord {
     })),
   };
 
-  if (session.toolName === 'build_travel_blocks') {
+  if (isSessionAnalysisToolName(session.toolName)) {
     return nextOutput;
   }
 
@@ -408,39 +412,54 @@ export type GoogleMapsCsvRow = {
 export function buildGoogleMapsCsv(
   output: UnknownRecord,
 ): { csv: string; rowCount: number; rows: GoogleMapsCsvRow[] } | null {
-  const rawBlocks = output.blocks;
-  if (!Array.isArray(rawBlocks)) return null;
-
   const rows: GoogleMapsCsvRow[] = [];
 
-  for (const rawBlock of rawBlocks) {
-    if (!isRecord(rawBlock)) continue;
-    if (rawBlock.type !== 'spot') continue;
+  const analysis = parseSessionAnalysis(output.session_analysis ?? output.sessionAnalysis);
+  if (analysis && analysis.spots.length > 0) {
+    for (const spot of analysis.spots) {
+      if (!spot.location) continue;
 
-    const location = normalizeLocation(rawBlock.location);
-    if (!location) continue;
+      rows.push({
+        name: spot.name.trim() || spot.spot_id,
+        tags: spot.tags.map(normalizeTagForCsv).filter(Boolean).join(', '),
+        description: spot.description.trim(),
+        longitude: String(spot.location.lng),
+        latitude: String(spot.location.lat),
+      });
+    }
+  } else {
+    const rawBlocks = output.blocks;
+    if (!Array.isArray(rawBlocks)) return null;
 
-    const blockId = typeof rawBlock.block_id === 'string' ? rawBlock.block_id.trim() : '';
-    const title =
-      typeof rawBlock.title === 'string' && rawBlock.title.trim()
-        ? rawBlock.title.trim()
-        : blockId || 'Untitled Spot';
-    const description = typeof rawBlock.description === 'string' ? rawBlock.description : '';
-    const tags = Array.isArray(rawBlock.smart_tags)
-      ? rawBlock.smart_tags
-          .filter((tag): tag is string => typeof tag === 'string')
-          .map(normalizeTagForCsv)
-          .filter(Boolean)
-          .join(', ')
-      : '';
+    for (const rawBlock of rawBlocks) {
+      if (!isRecord(rawBlock)) continue;
+      if (rawBlock.type !== 'spot') continue;
 
-    rows.push({
-      name: title,
-      tags,
-      description,
-      longitude: String(location.lng),
-      latitude: String(location.lat),
-    });
+      const location = normalizeLocation(rawBlock.location);
+      if (!location) continue;
+
+      const blockId = typeof rawBlock.block_id === 'string' ? rawBlock.block_id.trim() : '';
+      const title =
+        typeof rawBlock.title === 'string' && rawBlock.title.trim()
+          ? rawBlock.title.trim()
+          : blockId || 'Untitled Spot';
+      const description = typeof rawBlock.description === 'string' ? rawBlock.description : '';
+      const tags = Array.isArray(rawBlock.smart_tags)
+        ? rawBlock.smart_tags
+            .filter((tag): tag is string => typeof tag === 'string')
+            .map(normalizeTagForCsv)
+            .filter(Boolean)
+            .join(', ')
+        : '';
+
+      rows.push({
+        name: title,
+        tags,
+        description,
+        longitude: String(location.lng),
+        latitude: String(location.lat),
+      });
+    }
   }
 
   if (rows.length === 0) return null;
@@ -507,8 +526,7 @@ export function toGuidePrompt(raw: string): string | null {
 }
 
 function isManualHandbookPrompt(raw: string): boolean {
-  const trimmed = raw.trim();
-  return trimmed.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX);
+  return isHandbookRemixPromptText(raw);
 }
 
 function toFirstSentence(raw: string): string {
@@ -677,8 +695,17 @@ function getStringField(output: unknown, field: string): string | null {
 }
 
 function getBlocksFromOutput(output: unknown): SavedBlockOutput[] {
-  if (!isRecord(output) || !Array.isArray(output.blocks)) return [];
-  return output.blocks.map((block, index) => toEditableBlockDraft(block, index)).map(toBlockOutput);
+  if (!isRecord(output)) return [];
+  if (Array.isArray(output.blocks)) {
+    return output.blocks
+      .map((block, index) => toEditableBlockDraft(block, index))
+      .map(toBlockOutput);
+  }
+
+  const analysis = parseSessionAnalysis(output.session_analysis ?? output.sessionAnalysis);
+  if (!analysis) return [];
+
+  return buildLegacyBlockDataFromSessionAnalysis(analysis).blocks;
 }
 
 function getSpotResolvedCounts(output: unknown): {
@@ -707,11 +734,11 @@ export function getToolJsonPanel(
 ): { title: string; value: string } | null {
   if (part.state !== 'output-available') return null;
 
-  if (toolName === 'build_travel_blocks') {
+  if (isSessionAnalysisToolName(toolName)) {
     const value = getFormattedJson(output);
     if (!value) return null;
     return {
-      title: 'build_travel_blocks JSON',
+      title: 'Session data JSON',
       value,
     };
   }
@@ -720,7 +747,7 @@ export function getToolJsonPanel(
     const value = getFormattedJson(output);
     if (!value) return null;
     return {
-      title: 'resolve_spot_coordinates JSON (includes lat/lng)',
+      title: 'Resolved spots JSON (includes lat/lng)',
       value,
     };
   }
@@ -815,7 +842,7 @@ export function getToolJsonPanel(
       images,
     };
     return {
-      title: `${toolName} output`,
+      title: 'Media preparation output',
       value: JSON.stringify(summary, null, 2),
     };
   }
@@ -830,7 +857,7 @@ export function getToolJsonPanel(
 export function canEditBlocks(toolName: string, part: ToolPart, output: unknown): boolean {
   if (part.state !== 'output-available') return false;
   if (
-    toolName !== 'build_travel_blocks'
+    !isSessionAnalysisToolName(toolName)
     && toolName !== 'resolve_spot_coordinates'
   ) {
     return false;
@@ -865,9 +892,9 @@ export function getToolSummary(toolName: string, part: ToolPart, output: unknown
     return 'Updated session description';
   }
 
-  if (toolName === 'build_travel_blocks') {
+  if (isSessionAnalysisToolName(toolName)) {
     const blockCount = getNumberField(output, 'blockCount') ?? getBlocksFromOutput(output).length;
-    return `Generated ${blockCount ?? 0} travel block(s)`;
+    return `Prepared ${blockCount ?? 0} structured session item(s)`;
   }
 
   if (toolName === 'resolve_spot_coordinates') {

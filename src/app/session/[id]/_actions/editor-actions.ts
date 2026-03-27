@@ -11,6 +11,10 @@ import {
 } from '../_lib/chat-utils';
 import { patchSessionState } from '../_lib/session-api';
 import { PERSISTABLE_BLOCK_TOOL_NAMES } from '../_lib/session-page-constants';
+import {
+  buildGoogleMapsDirectionsUrl,
+  SPOTS_CSV_FIELDS_LINE,
+} from '../_lib/spots-view-model';
 import { sessionEditorActions } from '../_stores/session-editor-store';
 
 export type CsvExportGuideState = {
@@ -63,7 +67,7 @@ export async function saveEditorSession({
   requireLogin,
   markEditorSessionAsSaved,
 }: SaveEditorSessionArgs): Promise<void> {
-  if (!requireLogin('Editing blocks requires an account login.')) return;
+  if (!requireLogin('Editing session data requires an account login.')) return;
   if (!sessionId) return;
   if (isSavingBlocks) return;
 
@@ -81,11 +85,11 @@ export async function saveEditorSession({
       output: nextOutput,
     });
     if (!saved) {
-      toast.error('Failed to save blocks. Please try again.');
+      toast.error('Failed to save session data. Please try again.');
       return;
     }
     markEditorSessionAsSaved(session);
-    toast.success('Blocks saved.');
+    toast.success('Session data saved.');
     console.log('[chat-ui] blocks-saved', {
       sourceKey: session.sourceKey,
       toolName: session.toolName,
@@ -93,13 +97,11 @@ export async function saveEditorSession({
     });
   } catch (error) {
     console.error('[chat-ui] save-blocks-failed', error);
-    toast.error(error instanceof Error ? error.message : 'Failed to save blocks.');
+    toast.error(error instanceof Error ? error.message : 'Failed to save session data.');
   } finally {
     sessionEditorActions.setIsSavingBlocks(sessionId, false);
   }
 }
-
-const CSV_FIELDS_LINE = 'name | tags | description | longitude | latitude';
 
 function toCsvPreviewText(rows: GoogleMapsCsvRow[]): string {
   return rows
@@ -110,40 +112,6 @@ function toCsvPreviewText(rows: GoogleMapsCsvRow[]): string {
       return `${index + 1}) ${name} | tags: ${tags}`;
     })
     .join('\n');
-}
-
-function toRoutePoint(row: GoogleMapsCsvRow): string | null {
-  const latitude = Number(row.latitude);
-  const longitude = Number(row.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return `${latitude},${longitude}`;
-}
-
-function buildGoogleMapsDirectionsUrl(rows: GoogleMapsCsvRow[]): string {
-  const points = rows.map(toRoutePoint).filter((point): point is string => point !== null);
-  if (points.length === 0) {
-    return 'https://www.google.com/maps/d/u/0/';
-  }
-
-  const params = new URLSearchParams({
-    api: '1',
-    travelmode: 'driving',
-  });
-
-  if (points.length === 1) {
-    params.set('destination', points[0]);
-    return `https://www.google.com/maps/dir/?${params.toString()}`;
-  }
-
-  params.set('origin', points[0]);
-  params.set('destination', points[points.length - 1]);
-
-  const waypointPoints = points.slice(1, -1);
-  if (waypointPoints.length > 0) {
-    params.set('waypoints', waypointPoints.join('|'));
-  }
-
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
 export function exportEditorSessionCsv(
@@ -160,10 +128,10 @@ export function exportEditorSessionCsv(
   const csvResult = buildGoogleMapsCsv(nextOutput);
   if (!csvResult) {
     if (spotCount === 0) {
-      toast.warning('No spot blocks found. Add at least one spot first.');
+      toast.warning('No spots found. Add at least one spot first.');
       return;
     }
-    toast.warning('No valid coordinates found. Please add lat/lng to spot blocks.');
+    toast.warning('No valid coordinates found. Please add lat/lng to your spot entries.');
     return;
   }
 
@@ -179,7 +147,7 @@ export function exportEditorSessionCsv(
     exportedCount: csvResult.rowCount,
     fileName,
     csvContent: csvResult.csv,
-    fieldsLine: CSV_FIELDS_LINE,
+    fieldsLine: SPOTS_CSV_FIELDS_LINE,
     previewText: toCsvPreviewText(csvResult.rows),
     openMapsUrl: buildGoogleMapsDirectionsUrl(csvResult.rows),
   });

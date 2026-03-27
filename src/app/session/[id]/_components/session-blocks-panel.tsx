@@ -33,8 +33,8 @@ export function SessionBlocksPanel({
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated px-6 text-center">
         <p className="max-w-lg text-sm font-medium text-text-tertiary">
-          No editable blocks available yet. Once resolve output is ready, blocks editor
-          will open automatically here.
+          No structured session data is ready yet. Once analysis output is available, the
+          source data workspace can open here for manual review.
         </p>
       </div>
     );

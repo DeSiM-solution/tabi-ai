@@ -5,6 +5,8 @@ import { formatSessionDateTime } from '@/lib/session-time';
 import { isRecord } from './chat-utils';
 import { GENERATING_HANDBOOK_TITLE } from './session-page-constants';
 
+export type PersistedHandbookGenerationKind = 'initial' | 'remix';
+
 export function getHandbookLifecycleStatusLabel(
   lifecycle: HandbookLifecycle,
 ): string {
@@ -44,6 +46,15 @@ export function getPersistedHandbookStyle(context: unknown): HandbookStyleId | n
   const nestedVideo = isRecord(context.video) ? context.video : null;
   const nestedStyle = normalizeHandbookStyle(nestedVideo?.handbookStyle);
   return nestedStyle;
+}
+
+export function getPersistedHandbookGenerationKind(
+  context: unknown,
+): PersistedHandbookGenerationKind | null {
+  if (!isRecord(context)) return null;
+  return context.generationKind === 'initial' || context.generationKind === 'remix'
+    ? context.generationKind
+    : null;
 }
 
 export function isGeneratingHandbookPlaceholderTitle(

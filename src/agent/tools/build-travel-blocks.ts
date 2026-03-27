@@ -1,24 +1,21 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { runStructuredTask } from '@/lib/model-management';
+import { buildLegacyBlockDataFromSessionAnalysis, sessionAnalysisSchema } from '@/lib/session-analysis';
 import type { AgentToolContext } from '@/agent/context/types';
 import { getDurationMs, isAbortError, toErrorMessage } from '@/agent/context/utils';
 import { buildTravelBlocksPrompt } from '@/agent/prompts/build-travel-blocks';
-import { travelBlocksOutputSchema } from './types';
 import {
-  getSpotBlocks,
   getUniqueCachedVideos,
   getVideoThumbnailUrl,
   normalizeSessionTitle,
-  sanitizeTravelBlocks,
   syncSessionTitleWithVideo,
-  validateTravelBlocksOutput,
 } from './shared';
 
 export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
   return tool({
     description:
-      'Convert a crawled YouTube travel video into strict JSON itinerary blocks and output spot-only filtered array.',
+      'Analyze a crawled YouTube travel video into reusable session data for handbook generation, spots, and remix.',
     inputSchema: z.object({
       videoId: z
         .string()
@@ -29,11 +26,11 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
     }),
     execute: async ({ videoId }) =>
       ctx.runToolStep(
-        'build_travel_blocks',
+        'analyze_session_data',
         { videoId: videoId ?? null },
         async () => {
           const startedAt = Date.now();
-          console.log('[build_travel_blocks] start', {
+          console.log('[analyze_session_data] start', {
             videoId: videoId ?? null,
           });
 
@@ -77,7 +74,7 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
             ? targetVideo.hashtags
             : ctx.runtime.latestVideoContext?.hashtags ?? [];
 
-          console.log('[build_travel_blocks] context-ready', {
+          console.log('[analyze_session_data] context-ready', {
             videoId: resolvedVideoId,
             title: resolvedTitle,
             thumbnailUrl: resolvedThumbnailUrl,
@@ -89,8 +86,7 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
           try {
             const result = await runStructuredTask({
               task: 'json_compilation_strict',
-              schema: travelBlocksOutputSchema,
-              validateBusinessRules: validateTravelBlocksOutput,
+              schema: sessionAnalysisSchema,
               abortSignal: ctx.abortSignal,
               prompt: buildTravelBlocksPrompt(targetVideo),
             });
@@ -98,32 +94,36 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
             object = result.object;
             modelSummary = `${result.model.provider}:${result.model.modelId} (attempts=${result.attempts})`;
             console.log(
-              '[build_travel_blocks] generated-json',
+              '[analyze_session_data] generated-json',
               JSON.stringify(object, null, 2),
             );
           } catch (error) {
-            console.error('[build_travel_blocks] failed', {
+            console.error('[analyze_session_data] failed', {
               durationMs: getDurationMs(startedAt),
               message: toErrorMessage(error),
             });
             if (isAbortError(error)) {
-              throw new Error('build_travel_blocks aborted.');
+              throw new Error('Analyze Session Data aborted.');
             }
             throw new Error(
-              `build_travel_blocks failed: ${toErrorMessage(error)}. Try a shorter video or run again.`,
+              `Analyze Session Data failed: ${toErrorMessage(error)}. Try a shorter video or run again.`,
             );
           }
 
-          const blocks = sanitizeTravelBlocks(object.blocks);
-          const spotBlocks = getSpotBlocks(blocks);
+          const sessionAnalysis = sessionAnalysisSchema.parse(object);
+          const { blocks, spot_blocks: spotBlocks } =
+            buildLegacyBlockDataFromSessionAnalysis(sessionAnalysis);
 
-          console.log('[build_travel_blocks] success', {
+          console.log('[analyze_session_data] success', {
             durationMs: getDurationMs(startedAt),
+            sectionCount: sessionAnalysis.sections.length,
+            spotCandidateCount: sessionAnalysis.spots.length,
             blockCount: blocks.length,
             spotCount: spotBlocks.length,
             model: modelSummary,
           });
 
+          ctx.runtime.latestSessionAnalysis = sessionAnalysis;
           ctx.runtime.latestBlocks = blocks;
           ctx.runtime.latestSpotBlocks = spotBlocks;
           ctx.runtime.spotCoordinatesResolved = false;
@@ -146,13 +146,17 @@ export function createBuildTravelBlocksTool(ctx: AgentToolContext) {
             thumbnailUrl: resolvedThumbnailUrl,
             guideTitle: resolvedTitle,
             coverImageUrl: resolvedThumbnailUrl,
+            session_analysis: sessionAnalysis,
+            analysisSummary: sessionAnalysis.summary,
+            sectionCount: sessionAnalysis.sections.length,
             blockCount: blocks.length,
             blocks,
             spot_blocks: spotBlocks,
+            spotCandidateCount: sessionAnalysis.spots.length,
             spotCount: spotBlocks.length,
           };
           console.log(
-            '[build_travel_blocks] output-json',
+            '[analyze_session_data] output-json',
             JSON.stringify(buildResult, null, 2),
           );
 

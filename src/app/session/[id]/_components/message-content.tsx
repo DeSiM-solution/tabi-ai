@@ -1,5 +1,4 @@
 import type { UIMessage } from 'ai';
-import { FiEdit2 } from 'react-icons/fi';
 import type { IconType } from 'react-icons/lib';
 import {
   LuCheck,
@@ -22,7 +21,6 @@ import {
 } from '@/lib/handbook-style';
 import {
   resolveToolDurationMs,
-  canEditBlocks,
   getToolJsonPanel,
   getToolStatus,
   getToolSummary,
@@ -31,12 +29,14 @@ import {
   type EditedOutputs,
   type ToolPart,
 } from '../_lib/chat-utils';
+import { formatVisibleToolLabel } from '../_lib/workspace-presentation';
 
 const TOOL_ICON_BY_NAME: Record<string, IconType> = {
   parse_youtube_input: LuFileText,
   crawl_youtube_videos: LuCode,
   summarize_description: LuFileText,
   summarize_session_description: LuFileText,
+  analyze_session_data: LuFileText,
   build_travel_blocks: LuFileText,
   resolve_spot_coordinates: LuMapPin,
   search_image: LuImage,
@@ -47,21 +47,17 @@ const TOOL_ICON_BY_NAME: Record<string, IconType> = {
 interface ToolCardProps {
   part: ToolPart;
   output: unknown;
-  sourceKey: string;
   durationMs: number | null;
   isRequestBusy: boolean;
   hasRenderableHandbook: boolean;
-  onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
 }
 
 function ToolCard({
   part,
   output,
-  sourceKey,
   durationMs,
   isRequestBusy,
   hasRenderableHandbook,
-  onOpenEditor,
 }: ToolCardProps) {
   const toolName = part.type.replace('tool-', '');
   const baseStatus = getToolStatus(part.state);
@@ -86,8 +82,10 @@ function ToolCard({
     }
     return `Completed (${durationLabel})`;
   })();
-  const editable = canEditBlocks(toolName, part, output);
   const ToolIcon = TOOL_ICON_BY_NAME[toolName] ?? LuWrench;
+  const visibleToolLabel = formatVisibleToolLabel(
+    toolName as Parameters<typeof formatVisibleToolLabel>[0],
+  );
 
   const statusToneClassName =
     status.tone === 'done'
@@ -109,7 +107,7 @@ function ToolCard({
             <ToolIcon className="h-3.5 w-3.5" />
           </span>
           <span className="truncate font-mono text-[11px] font-medium text-text-primary">
-            {toolName}
+            {visibleToolLabel}
           </span>
         </div>
         <span
@@ -134,16 +132,6 @@ function ToolCard({
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.45] text-text-secondary">
             {toolJsonPanel.value}
           </pre>
-          {editable && (
-            <button
-              type="button"
-              onClick={() => onOpenEditor(sourceKey, toolName, output)}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-[6px] border border-border-default bg-bg-elevated px-2.5 py-1.5 text-[11px] font-medium text-text-secondary transition hover:bg-bg-secondary hover:text-text-primary"
-            >
-              <FiEdit2 className="h-3.5 w-3.5" />
-              Edit blocks
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -157,7 +145,6 @@ interface MessageContentProps {
   handbookStyle: HandbookStyleId | null;
   isRequestBusy: boolean;
   hasRenderableHandbook: boolean;
-  onOpenEditor: (sourceKey: string, toolName: string, output: unknown) => void;
 }
 
 function toAssistantTitle(style: HandbookStyleId | null): string {
@@ -207,7 +194,6 @@ export function MessageContent({
   handbookStyle,
   isRequestBusy,
   hasRenderableHandbook,
-  onOpenEditor,
 }: MessageContentProps) {
   const messageHandbookStyle = resolveMessageHandbookStyle(
     message,
@@ -259,11 +245,9 @@ export function MessageContent({
               key={`${message.id}-${i}`}
               part={part}
               output={output}
-              sourceKey={sourceKey}
               durationMs={resolvedDurationMs ?? null}
               isRequestBusy={isRequestBusy}
               hasRenderableHandbook={hasRenderableHandbook}
-              onOpenEditor={onOpenEditor}
             />
           );
         }

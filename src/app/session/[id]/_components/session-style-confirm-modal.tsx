@@ -34,19 +34,19 @@ export function SessionStyleConfirmModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Choose style for this generation"
+        aria-label="Choose style for this remix"
         className="w-full max-w-[520px] rounded-[20px] border border-border-light bg-bg-elevated p-6 shadow-[0_16px_42px_rgba(26,23,20,0.14)]"
         onClick={event => event.stopPropagation()}
       >
         <div className="space-y-1.5">
           <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
-            Before Generate
+            Before Remix
           </p>
           <h2 className="text-[28px] font-bold tracking-[-0.02em] text-text-primary">
             Choose your guide&apos;s aesthetic
           </h2>
           <p className="text-[13px] leading-[1.45] text-text-secondary">
-            Match your channel&apos;s visual identity for this run.
+            Match your channel&apos;s visual identity for this handbook remix.
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export function SessionStyleConfirmModal({
             disabled={isBusy}
             className="inline-flex h-11 items-center justify-center gap-1.5 rounded-[14px] bg-gradient-to-r from-[#F97066] to-[#FB923C] px-5 text-[14px] font-semibold text-text-inverse transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>Generate</span>
+            <span>Remix</span>
             <LuArrowRight className="h-4 w-4" />
           </button>
         </div>

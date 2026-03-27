@@ -54,7 +54,7 @@ export async function deleteHandbookVersion({
     handbooksStore.getState().bySessionId[sessionId]?.activeHandbookId ?? null;
   sessionEditorActions.setActiveHandbookId(sessionId, nextActiveHandbookId);
   if (!nextActiveHandbookId) {
-    sessionEditorActions.setCenterViewMode(sessionId, 'blocks');
+    sessionEditorActions.setCenterViewMode(sessionId, 'html');
   }
 
   return {

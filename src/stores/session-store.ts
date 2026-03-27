@@ -3,11 +3,12 @@
 import type { UIMessage } from 'ai';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { normalizeSessionAnalysisToolName } from '@/lib/session-analysis-tool';
 
 export const SESSION_TOOL_ORDER = [
   'parse_youtube_input',
   'crawl_youtube_videos',
-  'build_travel_blocks',
+  'analyze_session_data',
   'resolve_spot_coordinates',
   'search_image',
   'generate_image',
@@ -64,7 +65,7 @@ function createEmptySteps(): Record<SessionToolName, SessionStepProgress> {
   return {
     parse_youtube_input: { status: 'idle', error: null, output: null },
     crawl_youtube_videos: { status: 'idle', error: null, output: null },
-    build_travel_blocks: { status: 'idle', error: null, output: null },
+    analyze_session_data: { status: 'idle', error: null, output: null },
     resolve_spot_coordinates: { status: 'idle', error: null, output: null },
     search_image: { status: 'idle', error: null, output: null },
     generate_image: { status: 'idle', error: null, output: null },
@@ -96,6 +97,10 @@ function isToolPart(part: UIMessage['parts'][number]): part is ToolPart {
 
 function toToolName(type: string): SessionToolName | null {
   const rawName = type.replace('tool-', '');
+  const normalizedSessionAnalysisToolName = normalizeSessionAnalysisToolName(rawName);
+  if (normalizedSessionAnalysisToolName) {
+    return normalizedSessionAnalysisToolName;
+  }
   if (!SESSION_TOOL_ORDER.includes(rawName as SessionToolName)) {
     return null;
   }
@@ -299,11 +304,10 @@ export function useSessionStore<T>(selector: (state: SessionProcessState) => T):
 
 export function formatToolLabel(step: SessionToolName | null): string {
   if (!step) return 'idle';
-  if (step === 'parse_youtube_input') return 'Parse URL';
+  if (step === 'parse_youtube_input') return 'Parse Request';
   if (step === 'crawl_youtube_videos') return 'Crawl Video';
-  if (step === 'build_travel_blocks') return 'Build Blocks';
-  if (step === 'resolve_spot_coordinates') return 'Resolve Coordinates';
-  if (step === 'search_image') return 'Search Images';
-  if (step === 'generate_image') return 'Generate Images';
+  if (step === 'analyze_session_data') return 'Analyze Session Data';
+  if (step === 'resolve_spot_coordinates') return 'Resolve Spots';
+  if (step === 'search_image' || step === 'generate_image') return 'Prepare Media';
   return 'Generate Handbook';
 }

@@ -2,6 +2,15 @@ import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 
 import { resolveModelTask } from '@/lib/model-management';
 import { normalizeHandbookStyle } from '@/lib/handbook-style';
 import {
+  LEGACY_SESSION_ANALYSIS_TOOL_NAME,
+  SESSION_ANALYSIS_TOOL_NAME,
+} from '@/lib/session-analysis-tool';
+import type { SessionToolNameValue } from '@/lib/session-enums';
+import {
+  getHandbookRemixPromptVariant,
+  isHandbookRemixPromptText,
+} from '@/lib/handbook-remix';
+import {
   markSessionCancelled,
   markSessionCompleted,
   markSessionError,
@@ -22,17 +31,24 @@ import { ORCHESTRATION_SYSTEM_PROMPT } from '@/agent/prompts/orchestration-syste
 import type { PersistedToolName } from '@/agent/tools/types';
 import { buildAgentTools } from '@/agent/tools';
 
+// `handbook_regen` is kept as the internal compatibility mode behind the Remix flow.
 type OrchestrationMode = 'full_pipeline' | 'handbook_regen';
+type ManualActiveToolName =
+  | 'search_image'
+  | 'generate_image'
+  | 'generate_handbook_html';
 
 const NON_BLOCKING_TOOLS = new Set<PersistedToolName>(['resolve_spot_coordinates']);
 const IMAGE_TOOLS = new Set<PersistedToolName>(['search_image', 'generate_image']);
 const BLOCK_BUILD_TOOLS = new Set<PersistedToolName>([
   'parse_youtube_input',
   'crawl_youtube_videos',
+  'analyze_session_data',
   'build_travel_blocks',
 ]);
 const TOOL_PRIORITY: PersistedToolName[] = [
   'generate_handbook_html',
+  'analyze_session_data',
   'build_travel_blocks',
   'crawl_youtube_videos',
   'parse_youtube_input',
@@ -40,7 +56,6 @@ const TOOL_PRIORITY: PersistedToolName[] = [
   'generate_image',
   'resolve_spot_coordinates',
 ];
-const MANUAL_HANDBOOK_PROMPT_PREFIX = 'Generate handbook HTML from edited blocks.';
 const FULL_PIPELINE_MAX_STEPS = 9;
 const HANDBOOK_REGEN_WITH_IMAGES_MAX_STEPS = 2;
 const HANDBOOK_REGEN_NEEDS_IMAGES_MAX_STEPS = 4;
@@ -96,11 +111,23 @@ function hasRenderableHtml(runtime: AgentRuntimeState): boolean {
   return typeof runtime.latestHandbookHtml === 'string' && runtime.latestHandbookHtml.trim().length > 0;
 }
 
+function hasAnalyzedSessionData(runtime: AgentRuntimeState): boolean {
+  return Boolean(runtime.latestSessionAnalysis) || runtime.latestBlocks.length > 0;
+}
+
 function pickPrimaryFailedTool(tools: PersistedToolName[]): PersistedToolName | null {
   for (const toolName of TOOL_PRIORITY) {
     if (tools.includes(toolName)) return toolName;
   }
   return tools[0] ?? null;
+}
+
+function toPersistedFailedStep(toolName: PersistedToolName | null): SessionToolNameValue | null {
+  if (!toolName) return null;
+  if (toolName === SESSION_ANALYSIS_TOOL_NAME) {
+    return LEGACY_SESSION_ANALYSIS_TOOL_NAME;
+  }
+  return toolName as SessionToolNameValue;
 }
 
 function getBlockingFailedTools(runtime: AgentRuntimeState): PersistedToolName[] {
@@ -119,7 +146,7 @@ function getBlockingFailedTools(runtime: AgentRuntimeState): PersistedToolName[]
   }
 
   const hasBuildPipelineFailures = blockingTools.some(toolName => BLOCK_BUILD_TOOLS.has(toolName));
-  if (hasBuildPipelineFailures && runtime.latestBlocks.length > 0) {
+  if (hasBuildPipelineFailures && hasAnalyzedSessionData(runtime)) {
     blockingTools = blockingTools.filter(toolName => !BLOCK_BUILD_TOOLS.has(toolName));
   }
 
@@ -164,7 +191,8 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       .map(part => part.text)
       .join(' ')
       .trim() ?? '';
-  const isManualHandbookRequest = latestUserText.startsWith(MANUAL_HANDBOOK_PROMPT_PREFIX);
+  const remixPromptVariant = getHandbookRemixPromptVariant(latestUserText);
+  const isManualHandbookRequest = isHandbookRemixPromptText(latestUserText);
 
   console.log('[chat_api] request-start', {
     requestId,
@@ -175,6 +203,8 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
     removedToolParts: sanitizedInput.removedToolParts,
     removedMessages: sanitizedInput.removedMessages,
     latestUserTextPreview: latestUserText.slice(0, 200),
+    requestFlow: isManualHandbookRequest ? 'remix' : 'generation',
+    remixPromptVariant,
   });
 
   if (sessionId) {
@@ -238,24 +268,24 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   const runToolStep = createRunToolStep({ sessionId, userId, runtime });
   const executionAbortSignal: AbortSignal | undefined = req.signal;
   const hasPreparedImages = runtime.latestHandbookImages.length > 0;
-  const hasBlocks = runtime.latestBlocks.length > 0;
+  const hasSessionAnalysis = hasAnalyzedSessionData(runtime);
   const orchestrationMode: OrchestrationMode = isManualHandbookRequest
     ? 'handbook_regen'
     : 'full_pipeline';
   const maxSteps =
     orchestrationMode === 'full_pipeline'
       ? FULL_PIPELINE_MAX_STEPS
-      : hasPreparedImages && hasBlocks
+      : hasPreparedImages && hasSessionAnalysis
         ? HANDBOOK_REGEN_WITH_IMAGES_MAX_STEPS
         : HANDBOOK_REGEN_NEEDS_IMAGES_MAX_STEPS;
 
-  const manualActiveTools: PersistedToolName[] | undefined = isManualHandbookRequest
-    ? hasPreparedImages && hasBlocks
+  const manualActiveTools: ManualActiveToolName[] | undefined = isManualHandbookRequest
+    ? hasPreparedImages && hasSessionAnalysis
       ? ['generate_handbook_html']
       : ['search_image', 'generate_image', 'generate_handbook_html']
     : undefined;
   const manualToolChoice = isManualHandbookRequest
-    ? hasPreparedImages && hasBlocks
+    ? hasPreparedImages && hasSessionAnalysis
       ? ({ type: 'tool', toolName: 'generate_handbook_html' } as const)
       : undefined
     : undefined;
@@ -278,11 +308,12 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
   };
 
   if (isManualHandbookRequest) {
-    console.log('[chat_api] manual-handbook-tooling', {
+    console.log('[chat_api] remix-handbook-tooling', {
       requestId,
       orchestrationMode,
+      remixPromptVariant,
       hasPreparedImages,
-      hasBlocks,
+      hasSessionAnalysis,
       activeTools: manualActiveTools,
       toolChoice: manualToolChoice,
       maxSteps,
@@ -407,7 +438,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
           ? runtime.requestToolErrors[failedTool] ?? fallbackMessage
           : fallbackMessage;
         await markSessionError(sessionId, userId, finalErrorMessage, {
-          failedStep: failedTool ?? null,
+          failedStep: toPersistedFailedStep(failedTool),
         });
       } catch (error) {
         console.error('[chat_api] persist-on-finish-failed', {
@@ -428,7 +459,7 @@ export async function executeChat(req: Request, userId: string): Promise<Respons
       if (sessionId) {
         const failedTool = pickPrimaryFailedTool(getBlockingFailedTools(runtime));
         void markSessionError(sessionId, userId, message, {
-          failedStep: failedTool ?? null,
+          failedStep: toPersistedFailedStep(failedTool),
         });
       }
       return message;
